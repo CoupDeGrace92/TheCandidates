@@ -1,5 +1,11 @@
 package game
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 type PieceType string
 
 const (
@@ -70,10 +76,75 @@ func ConcatenateBoardState(whiteBoard, blackBoard *BoardState) *BoardState {
 	return &merged
 }
 
-// One thing to note about the ToFEN function - since we only have to convert ToFEN() once, then just pass around FENs
-// we may not need to keep track of last move for purposes of e.p. or castling
+func getPieceFENChar(p Piece) string {
+	var char string
+	switch p.Type {
+	case Pawn:
+		char = "p"
+	case Knight:
+		char = "n"
+	case Bishop:
+		char = "b"
+	case Rook:
+		char = "r"
+	case Queen:
+		char = "q"
+	case King:
+		char = "k"
+	}
+	if p.Color == "white" {
+		return strings.ToUpper(char)
+	}
+	return char
+}
+
 func (m *MatchState) ToFEN() string {
-	return ""
+	if m == nil {
+		return ""
+	}
+
+	combinedBoard := ConcatenateBoardState(m.WhitePlayer.Board, m.BlackPlayer.Board)
+	var rows []string
+	//FEN reads top rank (Rank = 8) down to bottom rank (Rank = 0)
+	for rank := 8; rank >= 1; rank-- {
+		var rankStringBuilder strings.Builder
+		emptyCount := 0
+
+		for file := 1; file <= 8; file++ {
+			loc := Location{Rank: rank, File: file}
+			if piece, occupied := (*combinedBoard)[loc]; occupied {
+				if emptyCount > 0 {
+					rankStringBuilder.WriteString(strconv.Itoa(emptyCount))
+					emptyCount = 0
+				}
+				rankStringBuilder.WriteString(getPieceFENChar(piece))
+			} else {
+				emptyCount++
+			}
+		}
+
+		if emptyCount > 0 {
+			rankStringBuilder.WriteString(strconv.Itoa(emptyCount))
+		}
+		rows = append(rows, rankStringBuilder.String())
+	}
+
+	fenBoard := strings.Join(rows, "/")
+
+	castling := m.CastlingRights
+	ep := m.EnPassantTarget
+	if ep == "" {
+		ep = "-"
+	}
+
+	return fmt.Sprintf("%s %s %s %s %d %d",
+		fenBoard,
+		m.ActiveColor,
+		castling,
+		ep,
+		m.HalfMoveClock,
+		m.FullMoveNumber,
+	)
 }
 
 func (m *MatchState) InitializeCastlingRights() {
@@ -83,7 +154,7 @@ func (m *MatchState) InitializeCastlingRights() {
 		if r, ok := (*m.WhitePlayer.Board)[Location{Rank: 1, File: 8}]; ok && r.Type == Rook {
 			rights += "K"
 		}
-		if r, ok := (*m.WhitePlayer.Board)[Location{Rank: 1, File: 0}]; ok && r.Type == Rook {
+		if r, ok := (*m.WhitePlayer.Board)[Location{Rank: 1, File: 1}]; ok && r.Type == Rook {
 			rights += "Q"
 		}
 	}
