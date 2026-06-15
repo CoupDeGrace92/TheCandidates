@@ -135,10 +135,14 @@ func (m *MatchState) ToFEN() string {
 	if ep == "" {
 		ep = "-"
 	}
+	activeColorChar := "w"
+	if m.ActiveColor == Black {
+		activeColorChar = "b"
+	}
 
 	return fmt.Sprintf("%s %s %s %s %d %d",
 		fenBoard,
-		m.ActiveColor,
+		activeColorChar,
 		castling,
 		ep,
 		m.HalfMoveClock,

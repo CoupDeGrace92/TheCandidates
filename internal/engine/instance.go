@@ -47,6 +47,30 @@ func NewInstance(binaryPath string, cfg Config) (*StockfishInstance, error) {
 	instance.UpdateConfig(cfg)
 	instance.sendCommand("isready")
 
+	hasReadyOK := false
+
+	//We must flush the stdout pipe before we start feeding moves:
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "info string CRITICAL ERROR") {
+			return nil, fmt.Errorf("stockfish booted with fatal interanl configuration error: %s", line)
+		}
+
+		if line == "readyok" {
+			hasReadyOK = true
+			break
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading stockfish initialization handshake")
+	}
+
+	if !hasReadyOK {
+		return nil, fmt.Errorf("stockfish process terminated or closed prematurely")
+	}
+
 	return instance, nil
 }
 
@@ -61,22 +85,28 @@ func (s *StockfishInstance) RequestMove(fen string) (string, error) {
 	scanner := bufio.NewScanner(s.stdout)
 
 	//Listen to the text output stream synchronously until we find "bestmove"
+	var discoveredMove string
+
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		if strings.HasPrefix(line, "bestmove") {
 			parts := strings.Split(line, " ")
 			if len(parts) >= 2 {
-				return parts[1], nil
+				discoveredMove = parts[1]
 			}
-			return "", fmt.Errorf("malformed bestmove output from engine: %s", line)
+			break
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("error reading engine stdout stream: %w", err)
 	}
 
-	return "", fmt.Errorf("engine closed output prematurely")
+	if discoveredMove == "" {
+		return "", fmt.Errorf("Engine stream ended or halted without delivering a move")
+	}
+
+	return discoveredMove, nil
 }
 
 func (s *StockfishInstance) Close() {
