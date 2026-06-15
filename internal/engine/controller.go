@@ -43,7 +43,7 @@ func (m *MatchController) SimNextTurn(ctx context.Context, state *game.MatchStat
 
 		var selectedEngine *StockfishInstance
 
-		if state.ActiveColor == "white" {
+		if state.ActiveColor == game.White {
 			selectedEngine = m.WhiteEngine
 		} else {
 			selectedEngine = m.BlackEngine
