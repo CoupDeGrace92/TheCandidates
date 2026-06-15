@@ -12,18 +12,20 @@ func TestConcatenateBoardState(t *testing.T) {
 	posBlack := Location{Rank: 8, File: 5}
 
 	whiteBoard := BoardState{
-		posWhite: {ID: "w_k", Type: King, Color: White},
+		posWhite: {Type: King, Color: White},
 	}
 	blackBoard := BoardState{
-		posBlack: {ID: "b_k", Type: King, Color: Black},
+		posBlack: {Type: King, Color: Black},
 	}
 
 	merged := ConcatenateBoardState(&whiteBoard, &blackBoard)
 
 	require.NotNil(t, merged)
 	assert.Len(t, *merged, 2)
-	assert.Equal(t, "w_k", (*merged)[posWhite].ID)
-	assert.Equal(t, "b_k", (*merged)[posBlack].ID)
+	assert.Equal(t, King, (*merged)[posWhite].Type)
+	assert.Equal(t, White, (*merged)[posWhite].Color)
+	assert.Equal(t, King, (*merged)[posBlack].Type)
+	assert.Equal(t, Black, (*merged)[posBlack].Color)
 }
 
 func TestMatchState_ToFEN_TableDriven(t *testing.T) {
@@ -37,16 +39,16 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {ID: "wk", Type: King, Color: White},  // E1
-						Location{File: 1, Rank: 1}: {ID: "wr1", Type: Rook, Color: White}, // A1
-						Location{File: 8, Rank: 1}: {ID: "wr2", Type: Rook, Color: White}, // H1
+						Location{File: 5, Rank: 1}: {Type: King, Color: White}, // E1
+						Location{File: 1, Rank: 1}: {Type: Rook, Color: White}, // A1
+						Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // H1
 					},
 				},
 				BlackPlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {ID: "bk", Type: King, Color: Black},  // E8
-						Location{File: 1, Rank: 8}: {ID: "br1", Type: Rook, Color: Black}, // A8
-						Location{File: 8, Rank: 8}: {ID: "br2", Type: Rook, Color: Black}, // H8
+						Location{File: 5, Rank: 8}: {Type: King, Color: Black}, // E8
+						Location{File: 1, Rank: 8}: {Type: Rook, Color: Black}, // A8
+						Location{File: 8, Rank: 8}: {Type: Rook, Color: Black}, // H8
 					},
 				},
 				ActiveColor:     "w",
@@ -62,14 +64,14 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {ID: "wk", Type: King, Color: White},  // E1
-						Location{File: 8, Rank: 1}: {ID: "wr2", Type: Rook, Color: White}, // H1
+						Location{File: 5, Rank: 1}: {Type: King, Color: White}, // E1
+						Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // H1
 					},
 				},
 				BlackPlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {ID: "bk", Type: King, Color: Black},  // E8
-						Location{File: 1, Rank: 8}: {ID: "br1", Type: Rook, Color: Black}, // A8
+						Location{File: 5, Rank: 8}: {Type: King, Color: Black}, // E8
+						Location{File: 1, Rank: 8}: {Type: Rook, Color: Black}, // A8
 					},
 				},
 				ActiveColor:     "b",
@@ -85,12 +87,12 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {ID: "wk", Type: King, Color: White},
+						Location{File: 5, Rank: 1}: {Type: King, Color: White},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {ID: "bk", Type: King, Color: Black},
+						Location{File: 5, Rank: 8}: {Type: King, Color: Black},
 					},
 				},
 				ActiveColor:     "w",
@@ -106,14 +108,14 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 2, Rank: 2}: {ID: "wp1", Type: Pawn, Color: White}, // B2
-						Location{File: 4, Rank: 3}: {ID: "wk", Type: King, Color: White},  // D3
+						Location{File: 2, Rank: 2}: {Type: Pawn, Color: White}, // B2
+						Location{File: 4, Rank: 3}: {Type: King, Color: White}, // D3
 					},
 				},
 				BlackPlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 7, Rank: 7}: {ID: "bp1", Type: Pawn, Color: Black}, // G7
-						Location{File: 5, Rank: 5}: {ID: "bk", Type: King, Color: Black},  // E5 (Fixed from Rank 6 to match expected FEN)
+						Location{File: 7, Rank: 7}: {Type: Pawn, Color: Black}, // G7
+						Location{File: 5, Rank: 5}: {Type: King, Color: Black}, // E5 (Fixed from Rank 6 to match expected FEN)
 					},
 				},
 				ActiveColor:     "b",
@@ -129,17 +131,17 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {ID: "wk", Type: King, Color: White},   // E1
-						Location{File: 3, Rank: 5}: {ID: "wc", Type: Bishop, Color: White}, // C5
-						Location{File: 4, Rank: 5}: {ID: "wp", Type: Pawn, Color: White},   // D5
-						Location{File: 1, Rank: 1}: {ID: "wr", Type: Rook, Color: White},   // A1
+						Location{File: 5, Rank: 1}: {Type: King, Color: White},   // E1
+						Location{File: 3, Rank: 5}: {Type: Bishop, Color: White}, // C5
+						Location{File: 4, Rank: 5}: {Type: Pawn, Color: White},   // D5
+						Location{File: 1, Rank: 1}: {Type: Rook, Color: White},   // A1
 					},
 				},
 				BlackPlayer: &PlayerProfile{
 					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {ID: "bk", Type: King, Color: Black},   // E8
-						Location{File: 5, Rank: 5}: {ID: "bp", Type: Pawn, Color: Black},   // E5
-						Location{File: 6, Rank: 6}: {ID: "bn", Type: Knight, Color: Black}, // F6
+						Location{File: 5, Rank: 8}: {Type: King, Color: Black},   // E8
+						Location{File: 5, Rank: 5}: {Type: Pawn, Color: Black},   // E5
+						Location{File: 6, Rank: 6}: {Type: Knight, Color: Black}, // F6
 					},
 				},
 				ActiveColor:     "w",

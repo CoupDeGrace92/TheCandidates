@@ -78,3 +78,16 @@ Long term - if we do actually have something on our hands, we will want to monit
  - Campaign/Era expansions  
  - Paid cosmetics
  - Gacha packs for characters/skills if we go that direction.  DONT WANT P2W, KEEP BALANCED IF POSSIBLE
+
+
+## Notes on what we are currently working on
+Now, we are building the board in ebitengine.  We will have 2 scenes - one where we are placing pieces from the bench,  
+and one where we are watching the round resolve. We have to figure out how scenes work.
+
+We have to decide where we want bench laid out.  Down the side?  Under the board?  
+
+### Resolution Stage
+When the game enters the ResolutionScene, the initialization logic will call the MatchController. The update  
+method will continuously pull the channel(s) returned by SimNextTurn.  When the channel is empty, Ebitengine can run  
+smooth animations on the string, when a string pops out of the channel, the Go code will read and execute the state  
+mutation logic on the layout structs and trigger the next asymetrical turn.
