@@ -105,7 +105,6 @@ func (s *StockfishInstance) RequestMove(fen string) (string, error) {
 	if discoveredMove == "" {
 		return "", fmt.Errorf("Engine stream ended or halted without delivering a move")
 	}
-
 	return discoveredMove, nil
 }
 
