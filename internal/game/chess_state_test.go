@@ -218,3 +218,85 @@ func TestMatchState_InitializeCastlingRights(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchState_ApplyMove(t *testing.T) {
+	tests := []struct {
+		name          string
+		initialState  *MatchState
+		move          string
+		verifyResults func(t *testing.T, ms *MatchState)
+	}{
+		{
+			name: "Standard Pawn Push Updates Clocks and En Passant Target",
+			initialState: &MatchState{
+				ActiveColor:    "white",
+				CastlingRights: "-",
+				WhitePlayer: &PlayerProfile{
+					Board: &BoardState{Location{File: 5, Rank: 2}: {Type: Pawn, Color: White}}, // e2
+				},
+				BlackPlayer: &PlayerProfile{
+					Board: &BoardState{}, // Explicitly initialize the map pointer to avoid nil panics
+				},
+			},
+			move: "e2e4",
+			verifyResults: func(t *testing.T, ms *MatchState) {
+				assert.Equal(t, Black, ms.ActiveColor)
+				assert.Equal(t, "e3", ms.EnPassantTarget) // Dynamic ep square target captured
+				assert.Equal(t, 0, ms.HalfMoveClock)
+				_, exists := (*ms.WhitePlayer.Board)[Location{File: 5, Rank: 4}] // e4
+				assert.True(t, exists)
+			},
+		},
+		{
+			name: "King Move Degrades Castling Rights Perfectly",
+			initialState: &MatchState{
+				ActiveColor:    "white",
+				CastlingRights: "KQkq",
+				WhitePlayer: &PlayerProfile{
+					Board: &BoardState{Location{File: 5, Rank: 1}: {Type: King, Color: White}}, // e1
+				},
+				BlackPlayer: &PlayerProfile{
+					Board: &BoardState{}, // Explicitly initialize the map pointer to avoid nil panics
+				},
+			},
+			move: "e1d1",
+			verifyResults: func(t *testing.T, ms *MatchState) {
+				assert.Equal(t, "kq", ms.CastlingRights) // White rights cleared, Black preserved
+			},
+		},
+		{
+			name: "White Kingside Castling Correctly Repositions King and Rook",
+			initialState: &MatchState{
+				ActiveColor:    White,
+				CastlingRights: "KQkq",
+				WhitePlayer: &PlayerProfile{
+					Board: &BoardState{
+						Location{File: 5, Rank: 1}: {Type: King, Color: White}, // e1
+						Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // h1
+					},
+				},
+				BlackPlayer: &PlayerProfile{
+					Board: &BoardState{}, // Explicitly initialize the map pointer to avoid nil panics
+				},
+			},
+			move: "e1g1",
+			verifyResults: func(t *testing.T, ms *MatchState) {
+				assert.Equal(t, "kq", ms.CastlingRights)
+				// Verify King on g1, Rook on f1
+				_, kingExists := (*ms.WhitePlayer.Board)[Location{File: 7, Rank: 1}]
+				_, rookExists := (*ms.WhitePlayer.Board)[Location{File: 6, Rank: 1}]
+				assert.True(t, kingCenterRightCheck(kingExists, rookExists))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.initialState.ApplyMove(tt.move)
+			assert.NoError(t, err)
+			tt.verifyResults(t, tt.initialState)
+		})
+	}
+}
+
+func kingCenterRightCheck(k, r bool) bool { return k && r }
