@@ -141,31 +141,20 @@ func (b *BattleScene) Draw(screen *ebiten.Image) {
 
 			loc := game.Location{File: file, Rank: rank}
 			combined := game.ConcatenateBoardState(b.matchState.WhitePlayer.Board, b.matchState.BlackPlayer.Board)
+
 			if piece, occupied := (*combined)[loc]; occupied {
-				char := "?"
-				switch piece.Type {
-				case game.Pawn:
-					char = "P"
-				case game.Knight:
-					char = "N"
-				case game.Bishop:
-					char = "B"
-				case game.Rook:
-					char = "R"
-				case game.Queen:
-					char = "Q"
-				case game.King:
-					char = "K"
+				if sprite := GetPieceSprite(piece); sprite != nil {
+					op := &ebiten.DrawImageOptions{}
+
+					scaleX := float64(squareSize) / float64(SpriteW)
+					scaleY := float64(squareSize) / float64(SpriteH)
+
+					//Scale then translate, otherwise we have some geometry math issues
+					op.GeoM.Scale(scaleX, scaleY)
+					op.GeoM.Translate(float64(x), float64(y))
+
+					screen.DrawImage(sprite, op)
 				}
-
-				colorTag := "w"
-				if piece.Color == game.Black {
-					colorTag = "b"
-				}
-				displayStr := fmt.Sprintf("%s.%s", char, colorTag)
-
-				ebitenutil.DebugPrintAt(screen, displayStr, x+15, y+22)
-
 			}
 		}
 	}

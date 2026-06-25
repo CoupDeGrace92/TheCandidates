@@ -25,6 +25,8 @@ func (m *MainGameApp) Layout(outsideWidth, outsideHeigh int) (int, int) {
 }
 
 func main() {
+	scene.LoadAssets("assets/images/GenericChessPiecesSprite.png")
+
 	wbs := make(game.BoardState)
 	bbs := make(game.BoardState)
 
