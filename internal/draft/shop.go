@@ -147,7 +147,7 @@ func (dm *DraftManager) ProcessReroll(tray *ShopTray, profile *game.PlayerProfil
 		return fmt.Errorf("nil pointers passed to reroll interface boundary")
 	}
 	if profile.Gold < CostReroll {
-		return fmt.Errorf("insufficient gold balance: need %d, have %d")
+		return fmt.Errorf("insufficient gold balance: need %d, have %d", CostReroll, profile.Gold)
 	}
 
 	dm.RecycleTray(tray)

@@ -26,9 +26,19 @@ func NewDefaultProfile(id string, isHuman bool) *PlayerProfile {
 	darkTile := color.RGBA{120, 135, 120, 255}
 	lightTile := color.RGBA{235, 235, 235, 235}
 
+	allowed := make(map[Location]struct{})
+
+	for rank := 1; rank <= 2; rank++ {
+		for file := 1; file <= 8; file++ {
+			allowed[Location{File: file, Rank: rank}] = struct{}{}
+		}
+	}
+
+	wbs := make(BoardState)
 	bb := PlayerPieces{
-		Board: &BoardState{},
-		Bench: []Piece{},
+		Board:   &wbs,
+		Bench:   []Piece{},
+		Squares: allowed,
 	}
 
 	return &PlayerProfile{
