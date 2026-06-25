@@ -38,20 +38,24 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			name: "Full Castling Rights",
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {Type: King, Color: White}, // E1
-						Location{File: 1, Rank: 1}: {Type: Rook, Color: White}, // A1
-						Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // H1
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 1}: {Type: King, Color: White}, // E1
+							Location{File: 1, Rank: 1}: {Type: Rook, Color: White}, // A1
+							Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // H1
+						},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {Type: King, Color: Black}, // E8
-						Location{File: 1, Rank: 8}: {Type: Rook, Color: Black}, // A8
-						Location{File: 8, Rank: 8}: {Type: Rook, Color: Black}, // H8
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 8}: {Type: King, Color: Black}, // E8
+							Location{File: 1, Rank: 8}: {Type: Rook, Color: Black}, // A8
+							Location{File: 8, Rank: 8}: {Type: Rook, Color: Black}, // H8
+						},
 					},
 				},
-				ActiveColor:     "w",
+				ActiveColor:     "white",
 				CastlingRights:  "KQkq",
 				EnPassantTarget: "-",
 				HalfMoveClock:   0,
@@ -63,18 +67,22 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			name: "Partial Castling Rights",
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {Type: King, Color: White}, // E1
-						Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // H1
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 1}: {Type: King, Color: White}, // E1
+							Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // H1
+						},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {Type: King, Color: Black}, // E8
-						Location{File: 1, Rank: 8}: {Type: Rook, Color: Black}, // A8
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 8}: {Type: King, Color: Black}, // E8
+							Location{File: 1, Rank: 8}: {Type: Rook, Color: Black}, // A8
+						},
 					},
 				},
-				ActiveColor:     "b",
+				ActiveColor:     "black",
 				CastlingRights:  "Kq",
 				EnPassantTarget: "-",
 				HalfMoveClock:   2,
@@ -86,16 +94,20 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			name: "Half Move and Full Move Greater Than Zero",
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {Type: King, Color: White},
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 1}: {Type: King, Color: White},
+						},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {Type: King, Color: Black},
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 8}: {Type: King, Color: Black},
+						},
 					},
 				},
-				ActiveColor:     "w",
+				ActiveColor:     "white",
 				CastlingRights:  "-",
 				EnPassantTarget: "-",
 				HalfMoveClock:   14,
@@ -107,18 +119,22 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			name: "No EP or Castling Rights",
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 2, Rank: 2}: {Type: Pawn, Color: White}, // B2
-						Location{File: 4, Rank: 3}: {Type: King, Color: White}, // D3
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 2, Rank: 2}: {Type: Pawn, Color: White}, // B2
+							Location{File: 4, Rank: 3}: {Type: King, Color: White}, // D3
+						},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 7, Rank: 7}: {Type: Pawn, Color: Black}, // G7
-						Location{File: 5, Rank: 5}: {Type: King, Color: Black}, // E5 (Fixed from Rank 6 to match expected FEN)
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 7, Rank: 7}: {Type: Pawn, Color: Black}, // G7
+							Location{File: 5, Rank: 5}: {Type: King, Color: Black}, // E5
+						},
 					},
 				},
-				ActiveColor:     "b",
+				ActiveColor:     "black",
 				CastlingRights:  "-",
 				EnPassantTarget: "-",
 				HalfMoveClock:   0,
@@ -130,27 +146,31 @@ func TestMatchState_ToFEN_TableDriven(t *testing.T) {
 			name: "Semi Complex Position (With Active EP Target)",
 			state: &MatchState{
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {Type: King, Color: White},   // E1
-						Location{File: 3, Rank: 5}: {Type: Bishop, Color: White}, // C5
-						Location{File: 4, Rank: 5}: {Type: Pawn, Color: White},   // D5
-						Location{File: 1, Rank: 1}: {Type: Rook, Color: White},   // A1
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 1}: {Type: King, Color: White},   // E1
+							Location{File: 3, Rank: 5}: {Type: Bishop, Color: White}, // C5
+							Location{File: 4, Rank: 5}: {Type: Pawn, Color: White},   // D5
+							Location{File: 1, Rank: 1}: {Type: Rook, Color: White},   // A1
+						},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 8}: {Type: King, Color: Black},   // E8
-						Location{File: 5, Rank: 5}: {Type: Pawn, Color: Black},   // E5
-						Location{File: 6, Rank: 6}: {Type: Knight, Color: Black}, // F6
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 8}: {Type: King, Color: Black},   // E8
+							Location{File: 5, Rank: 5}: {Type: Pawn, Color: Black},   // E5
+							Location{File: 6, Rank: 6}: {Type: Knight, Color: Black}, // F6
+						},
 					},
 				},
-				ActiveColor:     "w",
+				ActiveColor:     "white",
 				CastlingRights:  "Q",
 				EnPassantTarget: "e6",
 				HalfMoveClock:   0,
 				FullMoveNumber:  12,
 			},
-			expectedFEN: "4k3/8/5n2/2BPp3/8/8/8/R3K3 w Q e6 0 12", // Fixed expected 'b' to uppercase 'B'
+			expectedFEN: "4k3/8/5n2/2BPp3/8/8/8/R3K3 w Q e6 0 12",
 		},
 	}
 
@@ -171,32 +191,32 @@ func TestMatchState_InitializeCastlingRights(t *testing.T) {
 		{
 			name: "Full Rights Intact",
 			setupBoard: func(m *MatchState) {
-				(*m.WhitePlayer.Board)[Location{File: 5, Rank: 1}] = Piece{Type: King, Color: White}
-				(*m.WhitePlayer.Board)[Location{File: 1, Rank: 1}] = Piece{Type: Rook, Color: White}
-				(*m.WhitePlayer.Board)[Location{File: 8, Rank: 1}] = Piece{Type: Rook, Color: White}
+				(*m.WhitePlayer.BoardAndBench.Board)[Location{File: 5, Rank: 1}] = Piece{Type: King, Color: White}
+				(*m.WhitePlayer.BoardAndBench.Board)[Location{File: 1, Rank: 1}] = Piece{Type: Rook, Color: White}
+				(*m.WhitePlayer.BoardAndBench.Board)[Location{File: 8, Rank: 1}] = Piece{Type: Rook, Color: White}
 
-				(*m.BlackPlayer.Board)[Location{File: 5, Rank: 8}] = Piece{Type: King, Color: Black}
-				(*m.BlackPlayer.Board)[Location{File: 1, Rank: 8}] = Piece{Type: Rook, Color: Black}
-				(*m.BlackPlayer.Board)[Location{File: 8, Rank: 8}] = Piece{Type: Rook, Color: Black}
+				(*m.BlackPlayer.BoardAndBench.Board)[Location{File: 5, Rank: 8}] = Piece{Type: King, Color: Black}
+				(*m.BlackPlayer.BoardAndBench.Board)[Location{File: 1, Rank: 8}] = Piece{Type: Rook, Color: Black}
+				(*m.BlackPlayer.BoardAndBench.Board)[Location{File: 8, Rank: 8}] = Piece{Type: Rook, Color: Black}
 			},
 			expectedRights: "KQkq",
 		},
 		{
 			name: "Asymmetric Rights",
 			setupBoard: func(m *MatchState) {
-				(*m.WhitePlayer.Board)[Location{File: 4, Rank: 1}] = Piece{Type: King, Color: White}
-				(*m.WhitePlayer.Board)[Location{File: 8, Rank: 1}] = Piece{Type: Rook, Color: White}
+				(*m.WhitePlayer.BoardAndBench.Board)[Location{File: 4, Rank: 1}] = Piece{Type: King, Color: White}
+				(*m.WhitePlayer.BoardAndBench.Board)[Location{File: 8, Rank: 1}] = Piece{Type: Rook, Color: White}
 
-				(*m.BlackPlayer.Board)[Location{File: 5, Rank: 8}] = Piece{Type: King, Color: Black}
-				(*m.BlackPlayer.Board)[Location{File: 8, Rank: 8}] = Piece{Type: Rook, Color: Black}
+				(*m.BlackPlayer.BoardAndBench.Board)[Location{File: 5, Rank: 8}] = Piece{Type: King, Color: Black}
+				(*m.BlackPlayer.BoardAndBench.Board)[Location{File: 8, Rank: 8}] = Piece{Type: Rook, Color: Black}
 			},
 			expectedRights: "k",
 		},
 		{
 			name: "No Rights Available",
 			setupBoard: func(m *MatchState) {
-				(*m.WhitePlayer.Board)[Location{File: 5, Rank: 5}] = Piece{Type: King, Color: White}
-				(*m.BlackPlayer.Board)[Location{File: 5, Rank: 6}] = Piece{Type: King, Color: Black}
+				(*m.WhitePlayer.BoardAndBench.Board)[Location{File: 5, Rank: 5}] = Piece{Type: King, Color: White}
+				(*m.BlackPlayer.BoardAndBench.Board)[Location{File: 5, Rank: 6}] = Piece{Type: King, Color: Black}
 			},
 			expectedRights: "-",
 		},
@@ -207,8 +227,8 @@ func TestMatchState_InitializeCastlingRights(t *testing.T) {
 			wbs := make(BoardState)
 			bbs := make(BoardState)
 			ms := &MatchState{
-				WhitePlayer: &PlayerProfile{Board: &wbs},
-				BlackPlayer: &PlayerProfile{Board: &bbs},
+				WhitePlayer: &PlayerProfile{BoardAndBench: &PlayerPieces{Board: &wbs}},
+				BlackPlayer: &PlayerProfile{BoardAndBench: &PlayerPieces{Board: &bbs}},
 			}
 			tt.setupBoard(ms)
 
@@ -232,18 +252,22 @@ func TestMatchState_ApplyMove(t *testing.T) {
 				ActiveColor:    "white",
 				CastlingRights: "-",
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{Location{File: 5, Rank: 2}: {Type: Pawn, Color: White}}, // e2
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{Location{File: 5, Rank: 2}: {Type: Pawn, Color: White}}, // e2
+					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{}, // Explicitly initialize the map pointer to avoid nil panics
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{},
+					},
 				},
 			},
 			move: "e2e4",
 			verifyResults: func(t *testing.T, ms *MatchState) {
 				assert.Equal(t, Black, ms.ActiveColor)
-				assert.Equal(t, "e3", ms.EnPassantTarget) // Dynamic ep square target captured
+				assert.Equal(t, "e3", ms.EnPassantTarget)
 				assert.Equal(t, 0, ms.HalfMoveClock)
-				_, exists := (*ms.WhitePlayer.Board)[Location{File: 5, Rank: 4}] // e4
+				_, exists := (*ms.WhitePlayer.BoardAndBench.Board)[Location{File: 5, Rank: 4}] // e4
 				assert.True(t, exists)
 			},
 		},
@@ -253,39 +277,46 @@ func TestMatchState_ApplyMove(t *testing.T) {
 				ActiveColor:    "white",
 				CastlingRights: "KQkq",
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{Location{File: 5, Rank: 1}: {Type: King, Color: White}}, // e1
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{Location{File: 5, Rank: 1}: {Type: King, Color: White}}, // e1
+					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{}, // Explicitly initialize the map pointer to avoid nil panics
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{},
+					},
 				},
 			},
 			move: "e1d1",
 			verifyResults: func(t *testing.T, ms *MatchState) {
-				assert.Equal(t, "kq", ms.CastlingRights) // White rights cleared, Black preserved
+				assert.Equal(t, "kq", ms.CastlingRights)
 			},
 		},
 		{
 			name: "White Kingside Castling Correctly Repositions King and Rook",
 			initialState: &MatchState{
-				ActiveColor:    White,
+				ActiveColor:    "white",
 				CastlingRights: "KQkq",
 				WhitePlayer: &PlayerProfile{
-					Board: &BoardState{
-						Location{File: 5, Rank: 1}: {Type: King, Color: White}, // e1
-						Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // h1
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{
+							Location{File: 5, Rank: 1}: {Type: King, Color: White}, // e1
+							Location{File: 8, Rank: 1}: {Type: Rook, Color: White}, // h1
+						},
 					},
 				},
 				BlackPlayer: &PlayerProfile{
-					Board: &BoardState{}, // Explicitly initialize the map pointer to avoid nil panics
+					BoardAndBench: &PlayerPieces{
+						Board: &BoardState{},
+					},
 				},
 			},
 			move: "e1g1",
 			verifyResults: func(t *testing.T, ms *MatchState) {
 				assert.Equal(t, "kq", ms.CastlingRights)
-				// Verify King on g1, Rook on f1
-				_, kingExists := (*ms.WhitePlayer.Board)[Location{File: 7, Rank: 1}]
-				_, rookExists := (*ms.WhitePlayer.Board)[Location{File: 6, Rank: 1}]
-				assert.True(t, kingCenterRightCheck(kingExists, rookExists))
+				_, kingExists := (*ms.WhitePlayer.BoardAndBench.Board)[Location{File: 7, Rank: 1}]
+				_, rookExists := (*ms.WhitePlayer.BoardAndBench.Board)[Location{File: 6, Rank: 1}]
+				assert.True(t, kingExists && rookExists)
 			},
 		},
 	}
@@ -298,5 +329,3 @@ func TestMatchState_ApplyMove(t *testing.T) {
 		})
 	}
 }
-
-func kingCenterRightCheck(k, r bool) bool { return k && r }

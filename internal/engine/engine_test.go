@@ -68,14 +68,22 @@ func TestMatchController_AsynDualSimulation(t *testing.T) {
 
 	bbs[game.Location{File: 5, Rank: 8}] = game.Piece{Type: game.King, Color: game.Black}
 
+	whiteBoard := game.PlayerPieces{Board: &wbs}
+	blackBoard := game.PlayerPieces{Board: &bbs}
+
+	whitePlayer := game.NewDefaultProfile("", true)
+	blackPlayer := game.NewDefaultProfile("", true)
+	whitePlayer.BoardAndBench = &whiteBoard
+	blackPlayer.BoardAndBench = &blackBoard
+
 	matchState := &game.MatchState{
 		ActiveColor:     game.White,
 		CastlingRights:  "-",
 		EnPassantTarget: "-",
 		HalfMoveClock:   0,
 		FullMoveNumber:  1,
-		WhitePlayer:     &game.PlayerProfile{Board: &wbs},
-		BlackPlayer:     &game.PlayerProfile{Board: &bbs},
+		WhitePlayer:     whitePlayer,
+		BlackPlayer:     blackPlayer,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

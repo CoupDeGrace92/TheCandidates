@@ -30,12 +30,16 @@ type BattleScene struct {
 }
 
 func NewBattleScene(binPath string, initialState *game.MatchState) (*BattleScene, error) {
-	//These defaults are currently hardwired
-	//TODO - MAKE THESE CONFIGURABLE
-	playerCfg := engine.Config{SkillLevel: 18, MoveTimeMs: 150}
-	enemyCfg := engine.Config{SkillLevel: 12, MoveTimeMs: 150}
+	pCfg := engine.Config{
+		SkillLevel: initialState.WhitePlayer.SkillLevel,
+		MoveTimeMs: initialState.WhitePlayer.MoveTimeMs,
+	}
+	eCfg := engine.Config{
+		SkillLevel: initialState.BlackPlayer.SkillLevel,
+		MoveTimeMs: initialState.BlackPlayer.MoveTimeMs,
+	}
 
-	ctrl, err := engine.NewMatchController(binPath, playerCfg, enemyCfg)
+	ctrl, err := engine.NewMatchController(binPath, pCfg, eCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -132,15 +136,22 @@ func (b *BattleScene) Draw(screen *ebiten.Image) {
 			x := offsetX + (file-1)*squareSize
 			y := offsetY + (8-rank)*squareSize
 
-			rectColor := color.RGBA{235, 235, 235, 255}
+			var activeTheme game.BoardTheme
+			if rank <= 4 {
+				activeTheme = b.matchState.WhitePlayer.Theme
+			} else {
+				activeTheme = b.matchState.BlackPlayer.Theme
+			}
+
+			rectColor := activeTheme.LightSquare
 			if (rank+file)%2 == 0 {
-				rectColor = color.RGBA{120, 135, 120, 255}
+				rectColor = activeTheme.DarkSquare
 			}
 
 			ebitenutil.DrawRect(screen, float64(x), float64(y), float64(squareSize-2), float64(squareSize-2), rectColor)
 
 			loc := game.Location{File: file, Rank: rank}
-			combined := game.ConcatenateBoardState(b.matchState.WhitePlayer.Board, b.matchState.BlackPlayer.Board)
+			combined := game.ConcatenateBoardState(b.matchState.WhitePlayer.BoardAndBench.Board, b.matchState.BlackPlayer.BoardAndBench.Board)
 
 			if piece, occupied := (*combined)[loc]; occupied {
 				if sprite := GetPieceSprite(piece); sprite != nil {

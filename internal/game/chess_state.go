@@ -40,13 +40,10 @@ func (p *Location) IsValid() bool {
 
 type BoardState map[Location]Piece
 
-type PlayerProfile struct {
+type PlayerPieces struct {
 	//This profile might move - this also might indicate which assets to pull for the player
-	PlayerID string      `json:"player_id"`
-	Health   int         `json:"health"`
-	Gold     int         `json:"gold"`
-	Board    *BoardState `json:"board"`
-	Bench    []Piece     `json:"bench"`
+	Board *BoardState `json:"board"`
+	Bench []Piece     `json:"bench"`
 	//Might also want - last white FEN and last black FEN
 }
 
@@ -102,7 +99,7 @@ func (m *MatchState) ToFEN() string {
 		return ""
 	}
 
-	combinedBoard := ConcatenateBoardState(m.WhitePlayer.Board, m.BlackPlayer.Board)
+	combinedBoard := ConcatenateBoardState(m.WhitePlayer.BoardAndBench.Board, m.BlackPlayer.BoardAndBench.Board)
 	var rows []string
 	//FEN reads top rank (Rank = 8) down to bottom rank (Rank = 0)
 	for rank := 8; rank >= 1; rank-- {
@@ -153,20 +150,20 @@ func (m *MatchState) ToFEN() string {
 func (m *MatchState) InitializeCastlingRights() {
 	rights := ""
 
-	if wk, ok := (*m.WhitePlayer.Board)[Location{Rank: 1, File: 5}]; ok && wk.Type == King {
-		if r, ok := (*m.WhitePlayer.Board)[Location{Rank: 1, File: 8}]; ok && r.Type == Rook {
+	if wk, ok := (*m.WhitePlayer.BoardAndBench.Board)[Location{Rank: 1, File: 5}]; ok && wk.Type == King {
+		if r, ok := (*m.WhitePlayer.BoardAndBench.Board)[Location{Rank: 1, File: 8}]; ok && r.Type == Rook {
 			rights += "K"
 		}
-		if r, ok := (*m.WhitePlayer.Board)[Location{Rank: 1, File: 1}]; ok && r.Type == Rook {
+		if r, ok := (*m.WhitePlayer.BoardAndBench.Board)[Location{Rank: 1, File: 1}]; ok && r.Type == Rook {
 			rights += "Q"
 		}
 	}
 
-	if bk, ok := (*m.BlackPlayer.Board)[Location{Rank: 8, File: 5}]; ok && bk.Type == King {
-		if r, ok := (*m.BlackPlayer.Board)[Location{Rank: 8, File: 8}]; ok && r.Type == Rook {
+	if bk, ok := (*m.BlackPlayer.BoardAndBench.Board)[Location{Rank: 8, File: 5}]; ok && bk.Type == King {
+		if r, ok := (*m.BlackPlayer.BoardAndBench.Board)[Location{Rank: 8, File: 8}]; ok && r.Type == Rook {
 			rights += "k"
 		}
-		if r, ok := (*m.BlackPlayer.Board)[Location{Rank: 8, File: 1}]; ok && r.Type == Rook {
+		if r, ok := (*m.BlackPlayer.BoardAndBench.Board)[Location{Rank: 8, File: 1}]; ok && r.Type == Rook {
 			rights += "q"
 		}
 	}
@@ -206,11 +203,11 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 	var opponentBoard *BoardState
 
 	if m.ActiveColor == White {
-		activeBoard = m.WhitePlayer.Board
-		opponentBoard = m.BlackPlayer.Board
+		activeBoard = m.WhitePlayer.BoardAndBench.Board
+		opponentBoard = m.BlackPlayer.BoardAndBench.Board
 	} else {
-		activeBoard = m.BlackPlayer.Board
-		opponentBoard = m.WhitePlayer.Board
+		activeBoard = m.BlackPlayer.BoardAndBench.Board
+		opponentBoard = m.WhitePlayer.BoardAndBench.Board
 	}
 
 	movingPiece, exists := (*activeBoard)[fromLoc]
@@ -287,7 +284,7 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 }
 
 func (m *MatchState) updateFlagsAndClocks(piece Piece, from, to Location) {
-	combined := ConcatenateBoardState(m.WhitePlayer.Board, m.BlackPlayer.Board)
+	combined := ConcatenateBoardState(m.WhitePlayer.BoardAndBench.Board, m.BlackPlayer.BoardAndBench.Board)
 	_, isCapture := (*combined)[to]
 
 	if piece.Type == Pawn || isCapture {

@@ -34,14 +34,24 @@ func main() {
 	wbs[game.Location{File: 5, Rank: 1}] = game.Piece{Type: game.King, Color: game.White}
 	bbs[game.Location{File: 5, Rank: 8}] = game.Piece{Type: game.King, Color: game.Black}
 
+	//HardWired white and black player defaults:
+	WhitePieces := game.PlayerPieces{Board: &wbs}
+	BlackPieces := game.PlayerPieces{Board: &bbs}
+
+	player1 := game.NewDefaultProfile("player1", true)
+	player1.BoardAndBench = &WhitePieces
+
+	player2 := game.NewDefaultProfile("player2", true)
+	player2.BoardAndBench = &BlackPieces
+
 	initialMatch := &game.MatchState{
 		ActiveColor:     game.White,
 		CastlingRights:  "-",
 		EnPassantTarget: "-",
 		HalfMoveClock:   0,
 		FullMoveNumber:  1,
-		WhitePlayer:     &game.PlayerProfile{Board: &wbs},
-		BlackPlayer:     &game.PlayerProfile{Board: &bbs},
+		WhitePlayer:     player1,
+		BlackPlayer:     player2,
 	}
 
 	battle, err := scene.NewBattleScene("assets/engines/stockfish", initialMatch)
