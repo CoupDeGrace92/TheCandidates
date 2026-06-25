@@ -15,6 +15,8 @@ import (
 
 type BattleScene struct {
 	matchState *game.MatchState
+	history    *game.PositionTracker
+	drawish    int
 	controller *engine.MatchController
 	simCtx     context.Context
 	cancelSim  context.CancelFunc
@@ -40,8 +42,10 @@ func NewBattleScene(binPath string, initialState *game.MatchState) (*BattleScene
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	hist := make(game.PositionTracker)
 	return &BattleScene{
 		matchState:    initialState,
+		history:       &hist,
 		controller:    ctrl,
 		simCtx:        ctx,
 		cancelSim:     cancel,
@@ -60,21 +64,46 @@ func (b *BattleScene) Update() error {
 				return nil
 			}
 
+			if result.Status == engine.StatusCheckmate {
+				b.statusMessage = "Game Over: Checkmate achieved!"
+				b.isCalculating = false
+				return nil
+			}
+			if result.Status == engine.StatusStalemate {
+				b.statusMessage = "Game Over: Draw by Stalemate!"
+				b.isCalculating = false
+				return nil
+			}
+
+			if result.IsEngineDraw {
+				b.drawish++
+				if b.drawish > 14 {
+					b.statusMessage = "Game Over: Draw by Agreement!"
+					b.isCalculating = false
+					return nil
+				}
+			} else {
+				b.drawish = 0
+			}
+
 			if result.Err != nil {
 				b.statusMessage = fmt.Sprintf("Engine error: %v", result.Err)
 				b.isCalculating = false
 				return nil
 			}
 
-			b.statusMessage = fmt.Sprintf("%s plays: %s", b.matchState.ActiveColor, result.Move)
-			if err := b.matchState.ApplyMove(result.Move); err != nil {
-				b.statusMessage = fmt.Sprintf("Move mutation error: %v", err)
+			_ = b.matchState.ApplyMove(result.Move)
+			if b.history.RecordPosition(b.matchState.ToFEN()) {
+				b.statusMessage = "Game Over: Draw by Threefold Repitition!"
 				b.isCalculating = false
 				return nil
 			}
 
-			b.isCalculating = false
-			b.accumulatedTicks = 0
+			if b.matchState.HalfMoveClock >= 100 {
+				b.statusMessage = "Game Over: Draw by 50-move rule limit"
+				b.isCalculating = false
+				return nil
+			}
 		default:
 			//Stockfish is still thinking
 		}

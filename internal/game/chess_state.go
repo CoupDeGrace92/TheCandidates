@@ -349,3 +349,17 @@ func abs(num int) int {
 	}
 	return num
 }
+
+type PositionTracker map[string]int
+
+func (pt PositionTracker) RecordPosition(fullFEN string) bool {
+	parts := strings.Split(fullFEN, " ")
+	if len(parts) < 4 {
+		return false
+	}
+
+	positionKey := strings.Join(parts[:4], " ")
+	pt[positionKey]++
+
+	return pt[positionKey] >= 3
+}

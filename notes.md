@@ -87,4 +87,5 @@ Long term - if we do actually have something on our hands, we will want to monit
 4. Screen resolution based sizing
 5. Set up drafting and piece placement interface
 6. Snap to move pieces from bench
+7. During bench - display opponents previous set up in the lower left corner?
 

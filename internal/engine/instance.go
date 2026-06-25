@@ -9,7 +9,7 @@ import (
 )
 
 type Config struct {
-	SkillLevel int //This value is the targetted ELO of the engine
+	SkillLevel int //This value is the targetted ELO of the engine, currently configured for stockfishes SkillLevel, can be reconfiged for the ELO command
 	MoveTimeMs int
 }
 
@@ -79,33 +79,62 @@ func (s *StockfishInstance) UpdateConfig(cfg Config) {
 	s.sendCommand(fmt.Sprintf("setoption name Skill Level value %d", cfg.SkillLevel))
 }
 
-func (s *StockfishInstance) RequestMove(fen string) (string, error) {
+func (s *StockfishInstance) RequestMove(fen string) (MoveResult, error) {
 	s.sendCommand(fmt.Sprintf("position fen %s", fen))
 	s.sendCommand(fmt.Sprintf("go movetime %d", s.config.MoveTimeMs))
 	scanner := bufio.NewScanner(s.stdout)
 
 	//Listen to the text output stream synchronously until we find "bestmove"
-	var discoveredMove string
+	var result MoveResult
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
+		if strings.HasPrefix(line, "info") && strings.Contains(line, "score") {
+			parts := strings.Split(line, " ")
+			for i, part := range parts {
+				if part == "score" && i+2 < len(parts) {
+					scoreType := parts[i+1]
+					scoreValStr := parts[i+2]
+
+					var scoreVal int
+					_, _ = fmt.Sscanf(scoreValStr, "%d", &scoreVal)
+
+					if scoreType == "mate" {
+						result.ScoreMateIn = scoreVal
+					} else if scoreType == "cp" && scoreVal == 0 {
+						result.IsEngineDraw = true
+					} else {
+						result.IsEngineDraw = false
+					}
+				}
+			}
+		}
+
 		if strings.HasPrefix(line, "bestmove") {
 			parts := strings.Split(line, " ")
 			if len(parts) >= 2 {
-				discoveredMove = parts[1]
+				result.Move = parts[1]
+
+				if result.Move == "(none)" || result.Move == "0000" {
+					if result.ScoreMateIn != 0 {
+						result.Status = StatusStalemate
+					} else {
+						result.Status = StatusCheckmate
+					}
+				}
 			}
 			break
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading engine stdout stream: %w", err)
+		return MoveResult{}, fmt.Errorf("error reading engine stdout stream: %w", err)
 	}
 
-	if discoveredMove == "" {
-		return "", fmt.Errorf("Engine stream ended or halted without delivering a move")
+	if result.Move == "" {
+		return MoveResult{}, fmt.Errorf("Engine stream ended or halted without delivering a move")
 	}
-	return discoveredMove, nil
+	return result, nil
 }
 
 func (s *StockfishInstance) Close() {

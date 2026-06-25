@@ -7,9 +7,21 @@ import (
 	"github.com/CoupDeGrace92/candidates/internal/game"
 )
 
+type GameStatus string
+
+const (
+	StatusActive    GameStatus = "active"
+	StatusCheckmate GameStatus = "checkmate"
+	//StatusDrawish   GameStatus = "drawish" - currently using isEngineDraw to track instead
+	StatusStalemate GameStatus = "stalemate"
+)
+
 type MoveResult struct {
-	Move string
-	Err  error
+	Move         string
+	Status       GameStatus
+	ScoreMateIn  int
+	IsEngineDraw bool
+	Err          error
 }
 
 type MatchController struct {
@@ -49,12 +61,15 @@ func (m *MatchController) SimNextTurn(ctx context.Context, state *game.MatchStat
 			selectedEngine = m.BlackEngine
 		}
 
-		move, err := selectedEngine.RequestMove(currentFEN)
+		sfResult, err := selectedEngine.RequestMove(currentFEN)
+		if err != nil {
+			fmt.Println(err)
+		}
 
 		select {
 		case <-ctx.Done():
 			return
-		case out <- MoveResult{Move: move, Err: err}:
+		case out <- sfResult:
 		}
 	}()
 
