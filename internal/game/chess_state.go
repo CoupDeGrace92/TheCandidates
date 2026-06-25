@@ -42,9 +42,25 @@ type BoardState map[Location]Piece
 
 type PlayerPieces struct {
 	//This profile might move - this also might indicate which assets to pull for the player
-	Board *BoardState `json:"board"`
-	Bench []Piece     `json:"bench"`
-	//Might also want - last white FEN and last black FEN
+	Board   *BoardState           `json:"board"`
+	Bench   []Piece               `json:"bench"`
+	Squares map[Location]struct{} `json:"squares"`
+}
+
+func NewPlayerPieces() *PlayerPieces {
+	allowed := make(map[Location]struct{})
+	for rank := 1; rank <= 2; rank++ {
+		for file := 1; file <= 8; file++ {
+			allowed[Location{File: file, Rank: rank}] = struct{}{}
+		}
+	}
+
+	bs := make(BoardState)
+	return &PlayerPieces{
+		Board:   &bs,
+		Bench:   []Piece{},
+		Squares: allowed,
+	}
 }
 
 type MatchState struct {

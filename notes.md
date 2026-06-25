@@ -81,11 +81,28 @@ Long term - if we do actually have something on our hands, we will want to monit
 
 
 ## Next Steps
-1. Set up end of game logic (finding checkmate/draws)
-2. Import piece assets
-3. Config based pieces/board(colors/style)
-4. Screen resolution based sizing
-5. Set up drafting and piece placement interface
-6. Snap to move pieces from bench
-7. During bench - display opponents previous set up in the lower left corner?
+1. Screen resolution based sizing
+2. Set up drafting and piece placement interface
+3. Snap to move pieces from bench
+4. During bench - display opponents previous set up in the lower left corner?
+
+## Drafting and Piece Placement
+Draft Pool - determine how many of each piece shows up in this pool per player, when pieces can approximately show up etc.
+Costs:
+ - Queen: 9/10
+ - Rook: 5
+ - Bishop: 3
+ - Knight: 3
+ - Pawn: 1
+
+Square Costs:
+ - 3rd Rank: 1
+ - 4th Rank: 3
+ - 5th Rank: 5 - and a decreased chance of claiming that square if the opponent has also drafted it, need logic for piece placement on conflict.
+ - 6th Rank+: 10
+
+Engine Costs should scale but I am not sure how - lets start with 1 and go for there since each 100 points in elo  
+is probably about 1 point of material
+
+Reroll for 1
 
