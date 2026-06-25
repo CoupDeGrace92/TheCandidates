@@ -3,13 +3,14 @@ package main
 import (
 	"log"
 
+	"github.com/CoupDeGrace92/candidates/internal/draft"
 	"github.com/CoupDeGrace92/candidates/internal/game"
 	"github.com/CoupDeGrace92/candidates/internal/scene"
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
 type MainGameApp struct {
-	currentScene *scene.BattleScene
+	currentScene *scene.ShopScene
 }
 
 func (m *MainGameApp) Update() error {
@@ -24,7 +25,8 @@ func (m *MainGameApp) Layout(outsideWidth, outsideHeigh int) (int, int) {
 	return m.currentScene.Layout(outsideWidth, outsideHeigh)
 }
 
-func main() {
+//Test for for the resolution phase
+/*func main() {
 	scene.LoadAssets("assets/images/GenericChessPiecesSprite.png")
 
 	wbs := make(game.BoardState)
@@ -65,6 +67,21 @@ func main() {
 
 	ebiten.SetWindowSize(640, 640)
 	ebiten.SetWindowTitle("The Candidates - Engine Combat Tester")
+
+	if err := ebiten.RunGame(app); err != nil {
+		log.Fatal(err)
+	}
+} */
+
+func main() {
+	profile := game.NewDefaultProfile("white", true)
+	manager := draft.NewDraftManager(10)
+	shop := scene.NewShopScene(profile, manager)
+	defer shop.Destroy()
+	app := &MainGameApp{currentScene: shop}
+
+	ebiten.SetWindowSize(640, 640)
+	ebiten.SetWindowTitle("The Candidates - Scaffolding Draft Shop")
 
 	if err := ebiten.RunGame(app); err != nil {
 		log.Fatal(err)

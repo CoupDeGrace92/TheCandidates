@@ -88,7 +88,7 @@ func (dm *DraftManager) RecycleTray(tray *ShopTray) {
 	}
 }
 
-func (dm *DraftManager) GenerateFreshTray() ShopTray {
+func (dm *DraftManager) GenerateFreshTray(allowedSquares map[game.Location]struct{}) ShopTray {
 	tray := ShopTray{
 		Units:   make([]ShopItem, 3),
 		Squares: make([]ShopItem, 2),
@@ -120,7 +120,80 @@ func (dm *DraftManager) GenerateFreshTray() ShopTray {
 	}
 
 	//Square selection here - we want it to be connected to the players current board, not just random squares.  Rank3 more likely than rank 5 etc.
+	eligibleSquares := GetEligibleSquares(allowedSquares)
+	for i := 0; i < 2; i++ {
+		if len(eligibleSquares) == 0 {
+			break
+		}
+
+		totalWeight := 0
+		for _, loc := range eligibleSquares {
+			switch loc.Rank {
+			case 3:
+				totalWeight += 50
+			case 4:
+				totalWeight += 30
+			case 5:
+				totalWeight += 15
+			case 6:
+				totalWeight += 5
+			default:
+				totalWeight += 1
+			}
+		}
+
+		roll := dm.rng.Intn(totalWeight)
+		currentWeightSum := 0
+		chosenIndex := 0
+
+		for idx, loc := range eligibleSquares {
+			weight := 1
+			switch loc.Rank {
+			case 3:
+				weight = 50
+			case 4:
+				weight = 30
+			case 5:
+				weight = 15
+			case 6:
+				weight = 5
+			}
+
+			currentWeightSum += weight
+			if roll < currentWeightSum {
+				chosenIndex = idx
+				break
+			}
+		}
+
+		chosenLoc := eligibleSquares[chosenIndex]
+		cost := GetSquareCost(chosenLoc.Rank)
+
+		tray.Squares[i] = ShopItem{
+			ID:           fmt.Sprintf("square_slot_%d_%d", i, dm.rng.Int63()),
+			Type:         ItemSquare,
+			Cost:         cost,
+			UnlockSquare: chosenLoc,
+		}
+
+		eligibleSquares = append(eligibleSquares[:chosenIndex], eligibleSquares[chosenIndex+1:]...)
+	}
 	return tray
+}
+
+func GetSquareCost(rank int) int {
+	switch rank {
+	case 3:
+		return CostRank3
+	case 4:
+		return CostRank4
+	case 5:
+		return CostRank5
+	case 6:
+		return CostRank6
+	default:
+		return 999 // Fallback safety catch for unmappable ranks
+	}
 }
 
 func (dm *DraftManager) drawRandomPieceFromGlobalBag() game.PieceType {
@@ -153,7 +226,7 @@ func (dm *DraftManager) ProcessReroll(tray *ShopTray, profile *game.PlayerProfil
 	dm.RecycleTray(tray)
 	profile.Gold -= CostReroll
 
-	*tray = dm.GenerateFreshTray()
+	*tray = dm.GenerateFreshTray(profile.BoardAndBench.Squares)
 	return nil
 }
 
