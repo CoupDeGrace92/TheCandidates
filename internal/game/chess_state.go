@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 )
@@ -375,4 +376,64 @@ func (pt PositionTracker) RecordPosition(fullFEN string) bool {
 	pt[positionKey]++
 
 	return pt[positionKey] >= 3
+}
+
+func (p *PlayerPieces) BenchToBoard(idx int, sq Location) bool {
+	if idx < 0 || idx >= len(p.Bench) {
+		return false
+	}
+
+	if _, allowed := p.Squares[sq]; !allowed {
+		return false
+	}
+	if _, ok := (*p.Board)[sq]; ok {
+		return false
+	}
+
+	piece := p.Bench[idx]
+	p.Bench = append(p.Bench[:idx], p.Bench[idx+1:]...)
+	(*p.Board)[sq] = piece
+	return true
+}
+
+func (p *PlayerPieces) BoardToBench(sq Location) bool {
+	if piece, ok := (*p.Board)[sq]; ok {
+		p.Bench = append(p.Bench, piece)
+		delete(*p.Board, sq)
+		return true
+	}
+	return false
+}
+
+func (p *PlayerPieces) BoardToBoard(init, target Location) bool {
+	if _, allowed := p.Squares[target]; !allowed {
+		return false
+	}
+	if _, ok := (*p.Board)[target]; ok {
+		return false
+	}
+	if piece, ok := (*p.Board)[init]; ok {
+		(*p.Board)[target] = piece
+		delete(*p.Board, init)
+		return true
+	}
+	return false
+}
+
+func (p *PlayerPieces) RandomOpenSquare(excluded map[Location]struct{}) (Location, bool) {
+	var eligible []Location
+	for loc := range p.Squares {
+		if excluded != nil {
+			if _, isExcluded := excluded[loc]; isExcluded {
+				continue
+			}
+		}
+		eligible = append(eligible, loc)
+	}
+	if len(eligible) == 0 {
+		return Location{}, false
+	}
+
+	chosenIndex := rand.Intn(len(eligible))
+	return eligible[chosenIndex], true
 }

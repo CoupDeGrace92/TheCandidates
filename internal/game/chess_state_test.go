@@ -329,3 +329,82 @@ func TestMatchState_ApplyMove(t *testing.T) {
 		})
 	}
 }
+
+func TestPlayerPieces_BenchToBoard(t *testing.T) {
+	targetLoc := Location{File: 4, Rank: 3}      // d3
+	testPiece := Piece{Type: Pawn, Color: White} // Removed ID string
+
+	p := NewPlayerPieces()
+	p.Bench = append(p.Bench, testPiece)
+
+	lockedLoc := Location{File: 4, Rank: 5}
+	successLocked := p.BenchToBoard(0, lockedLoc)
+	assert.False(t, successLocked)
+	assert.Len(t, p.Bench, 1)
+
+	p.Squares[targetLoc] = struct{}{}
+	successValid := p.BenchToBoard(0, targetLoc)
+
+	assert.True(t, successValid)
+	assert.Len(t, p.Bench, 0)
+
+	boardPiece, onBoard := (*p.Board)[targetLoc]
+	assert.True(t, onBoard)
+	assert.Equal(t, Pawn, boardPiece.Type)
+
+	p.Bench = append(p.Bench, Piece{Type: Knight, Color: White})
+	successCollision := p.BenchToBoard(0, targetLoc)
+	assert.False(t, successCollision)
+}
+
+func TestPlayerPieces_BoardToBench(t *testing.T) {
+	targetLoc := Location{File: 5, Rank: 2} // e2
+	p := NewPlayerPieces()
+	testPiece := Piece{Type: Rook, Color: White}
+	(*p.Board)[targetLoc] = testPiece
+
+	emptyLoc := Location{File: 1, Rank: 1}
+	successEmpty := p.BoardToBench(emptyLoc)
+
+	assert.False(t, successEmpty)
+
+	// Recall the valid Rook from e2 back to the bench inventory
+	initialBenchLen := len(p.Bench)
+	successRecall := p.BoardToBench(targetLoc)
+
+	assert.True(t, successRecall)
+	assert.Len(t, p.Bench, initialBenchLen+1)
+	assert.Equal(t, Rook, p.Bench[initialBenchLen].Type)
+
+	_, onBoard := (*p.Board)[targetLoc]
+	assert.False(t, onBoard)
+}
+
+func TestPlayerPieces_BoardToBoard(t *testing.T) {
+	startLoc := Location{File: 5, Rank: 2}  // e2
+	validLoc := Location{File: 5, Rank: 3}  // e3
+	lockedLoc := Location{File: 5, Rank: 5} // e5
+
+	p := NewPlayerPieces()
+	testPiece := Piece{Type: Pawn, Color: White}
+	(*p.Board)[startLoc] = testPiece
+
+	successLocked := p.BoardToBoard(startLoc, lockedLoc)
+	assert.False(t, successLocked)
+
+	emptyLoc := Location{File: 1, Rank: 1}
+	successEmpty := p.BoardToBoard(emptyLoc, validLoc)
+	assert.False(t, successEmpty)
+
+	p.Squares[validLoc] = struct{}{}
+	successValid := p.BoardToBoard(startLoc, validLoc)
+
+	assert.True(t, successValid)
+
+	_, oldOccupied := (*p.Board)[startLoc]
+	assert.False(t, oldOccupied)
+
+	boardPiece, newOccupied := (*p.Board)[validLoc]
+	assert.True(t, newOccupied)
+	assert.Equal(t, Pawn, boardPiece.Type)
+}

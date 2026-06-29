@@ -36,8 +36,8 @@ func TestBuyItem_TableDriven(t *testing.T) {
 				assert.Equal(t, 7, profile.Gold)
 
 				// Card must be appended to the tightly coupled bench slice
-				require.Len(t, profile.BoardAndBench.Bench, 1)
-				assert.Equal(t, game.Knight, profile.BoardAndBench.Bench[0].Type)
+				require.Len(t, profile.BoardAndBench.Bench, 2)
+				assert.Equal(t, game.Knight, profile.BoardAndBench.Bench[1].Type)
 
 				// Slicing check: Card should be physically erased from the view tray
 				assert.Len(t, tray.Units, 1)
@@ -105,7 +105,7 @@ func TestBuyItem_TableDriven(t *testing.T) {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "insufficient gold balance")
 				assert.Equal(t, 2, profile.Gold) // Currency remains untouched
-				assert.Len(t, profile.BoardAndBench.Bench, 0)
+				assert.Len(t, profile.BoardAndBench.Bench, 1)
 				assert.Len(t, tray.Units, 1) // Card remains on offer
 			},
 		},

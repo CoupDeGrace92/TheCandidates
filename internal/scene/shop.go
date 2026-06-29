@@ -3,7 +3,6 @@ package scene
 import (
 	"fmt"
 	"image/color"
-	"log"
 
 	"github.com/CoupDeGrace92/candidates/internal/draft"
 	"github.com/CoupDeGrace92/candidates/internal/game"
@@ -18,6 +17,15 @@ type ShopScene struct {
 	manager       *draft.DraftManager
 	tray          draft.ShopTray
 	statusMessage string
+	gameOver      bool
+
+	// Runtime calculated boundary areas for scaling calculations
+	lastWinW   float64
+	lastWinH   float64
+	boardX     float64
+	boardY     float64
+	boardSize  float64
+	squareSize float64
 
 	//Temp reroll button with collision boundaries
 	rerollBtn imageRect
@@ -34,6 +42,7 @@ func (r imageRect) Contains(x, y int) bool {
 
 func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *ShopScene {
 	startingTray := manager.GenerateFreshTray(profile.BoardAndBench.Squares)
+
 	return &ShopScene{
 		profile:       profile,
 		manager:       manager,
@@ -46,36 +55,53 @@ func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *Sho
 func (s *ShopScene) Update() error {
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
+
+		// 1. Check Reroll Action
 		if s.rerollBtn.Contains(mx, my) {
 			if err := s.manager.ProcessReroll(&s.tray, s.profile); err != nil {
 				s.statusMessage = fmt.Sprintf("Reroll Failed: %v", err)
 			} else {
-				s.statusMessage = "Shop refreshed! Piece bag has been adjusted"
+				s.statusMessage = "Shop Refreshed! Global unit bag adjusted."
 			}
 			return nil
 		}
 
+		// 2. Check Unit item Actions
 		for _, item := range s.tray.Units {
-			itemRect := s.getUnitItemRect(item.ID)
-			if itemRect.Contains(mx, my) {
+			rect := s.getUnitItemRect(item.ID)
+			if rect.Contains(mx, my) {
 				if err := s.manager.BuyItem(&s.tray, item.ID, s.profile); err != nil {
-					s.statusMessage = fmt.Sprintf("Purchase unsuccesful: %v", err)
+					s.statusMessage = fmt.Sprintf("Purchase Error: %v", err)
 				} else {
-					s.statusMessage = "Unit succesfully drafted to your bench"
+					s.statusMessage = "Unit successfully drafted to your Bench!"
 				}
 				return nil
 			}
 		}
 
-		for _, item := range s.tray.Squares {
-			itemRect := s.getSquareItemRect(item.ID)
-			if itemRect.Contains(mx, my) {
-				if err := s.manager.BuyItem(&s.tray, item.ID, s.profile); err != nil {
-					s.statusMessage = fmt.Sprintf("Purchase unsuccesful: %v", err)
-				} else {
-					s.statusMessage = "Square aquired!"
+		// 3. Check Chess Board Square Purchase Click Colliders
+		// Players can now click directly on a map grid square to execute a purchase!
+		for file := 1; file <= 8; file++ {
+			for rank := 1; rank <= 8; rank++ {
+				x := s.boardX + float64(file-1)*s.squareSize
+				y := s.boardY + float64(8-rank)*s.squareSize // Top-down mirror calculation
+				squareRect := imageRect{x: x, y: y, w: s.squareSize, h: s.squareSize}
+
+				if squareRect.Contains(mx, my) {
+					loc := game.Location{File: file, Rank: rank}
+
+					// Scan if this specific square is currently on offer inside our tray
+					for _, item := range s.tray.Squares {
+						if item.UnlockSquare == loc {
+							if err := s.manager.BuyItem(&s.tray, item.ID, s.profile); err != nil {
+								s.statusMessage = fmt.Sprintf("Territory Error: %v", err)
+							} else {
+								s.statusMessage = fmt.Sprintf("Territory Expanded to %c%d!", rune('a'+file-1), rank)
+							}
+							return nil
+						}
+					}
 				}
-				return nil
 			}
 		}
 	}
@@ -83,61 +109,211 @@ func (s *ShopScene) Update() error {
 }
 
 func (s *ShopScene) Draw(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{25, 25, 30, 255})
+	screen.Fill(bColor(30, 30, 35))
 
-	ebitenutil.DebugPrintAt(screen, "THE CANDIDATES - DRAFTING SHOP", 40, 20)
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("YOUR GOLD: %d G", s.profile.Gold), 40, 50)
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("ENGINE LEVEL: %d / 20", s.profile.SkillLevel), 240, 50)
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("BENCH UNITS: %d", len(s.profile.BoardAndBench.Bench)), 440, 50)
+	bounds := screen.Bounds()
+	winW := float64(bounds.Dx())
+	winH := float64(bounds.Dy())
 
-	ebitenutil.DebugPrintAt(screen, "--- UNITS FOR SALE ---", 40, 100)
-	for _, card := range s.tray.Units {
-		r := s.getUnitItemRect(card.ID)
-		ebitenutil.DrawRect(screen, r.x, r.y, r.w, r.h, color.RGBA{45, 45, 55, 255})
+	s.lastWinW = winW
+	s.lastWinH = winH
 
-		nameStr := fmt.Sprintf("%s\nCost: %dG", card.PieceType, card.Cost)
-		ebitenutil.DebugPrintAt(screen, nameStr, int(r.x+10), int(r.y+20))
+	// ==========================================
+	// 1. DYNAMIC RESPONSIVE LAYOUT CALCULATOR
+	// ==========================================
+	// Allocate proportions: Top Shop Tray takes 18%, Bottom Bench takes 18%
+	shopTrayH := winH * 0.18
+	benchTrayH := winH * 0.18
+	usableBoardH := winH - shopTrayH - benchTrayH - 60 // Leave 60px padding for status text
+
+	s.squareSize = usableBoardH / 8
+	if (winW-100)/8 < s.squareSize {
+		s.squareSize = (winW - 100) / 8
+	}
+	s.boardSize = s.squareSize * 8
+
+	s.boardX = (winW - s.boardSize) / 2
+	s.boardY = shopTrayH + 20
+
+	// ==========================================
+	// 2. RENDER TOP ROW SHOP itemS (UNITS)
+	// ==========================================
+	ebitenutil.DrawRect(screen, 0, 0, winW, shopTrayH, bColor(45, 45, 50))
+	headerTextH := shopTrayH * 0.15
+	s.DrawScaledText(screen, fmt.Sprintf("GOLD: %d G | SKILL: %d / 20", s.profile.Gold, s.profile.SkillLevel), 20, 10, headerTextH, color.White)
+
+	for _, item := range s.tray.Units {
+		r := s.getUnitItemRect(item.ID)
+		ebitenutil.DrawRect(screen, r.x, r.y, r.w, r.h, bColor(60, 60, 75))
+
+		sprite := GetPieceSprite(game.Piece{Type: item.PieceType, Color: game.White})
+		if sprite != nil {
+			op := &ebiten.DrawImageOptions{}
+
+			targetSpriteH := r.h * .6
+			scaleX := targetSpriteH / float64(SpriteW)
+			scaleY := targetSpriteH / float64(SpriteH)
+
+			scaledPieceW := float64(SpriteW) * scaleX
+			scaledPieceH := float64(SpriteH) * scaleY
+
+			paddingX := (r.w - scaledPieceW) / 2.0
+			paddingY := (r.h - scaledPieceH) / 3.0
+
+			op.GeoM.Scale(scaleX, scaleY)
+			op.GeoM.Translate(r.x+paddingX, r.y+paddingY)
+			screen.DrawImage(sprite, op)
+		}
+
 	}
 
-	ebitenutil.DebugPrintAt(screen, "--- TERRITORY EXPANSIONS ---", 360, 100)
-	for _, card := range s.tray.Squares {
-		r := s.getSquareItemRect(card.ID)
-		ebitenutil.DrawRect(screen, r.x, r.y, r.w, r.h, color.RGBA{55, 45, 45, 255})
+	//Reroll button proportions
+	btnW := s.squareSize * 2.2
+	btnH := s.squareSize * 0.7
+	btnY := (shopTrayH / 2.0) - (btnH / 2.0)
 
-		fileChar := rune('a' + card.UnlockSquare.File - 1)
-		nameStr := fmt.Sprintf("Square: %c%d\nCost: %dG", fileChar, card.UnlockSquare.Rank, card.Cost)
-		ebitenutil.DebugPrintAt(screen, nameStr, int(r.x+10), int(r.y+20))
+	s.rerollBtn = imageRect{x: winW - btnW - 20, y: btnY, w: btnW, h: btnH}
+	ebitenutil.DrawRect(screen, s.rerollBtn.x, s.rerollBtn.y, s.rerollBtn.w, s.rerollBtn.h, bColor(140, 110, 40))
+	s.DrawScaledText(screen, "REROLL (1G)", s.rerollBtn.x+15, s.rerollBtn.y+s.rerollBtn.h/2-6, s.rerollBtn.h*0.2, color.White)
+
+	// ==========================================
+	// 3. RENDER MIDDLE ROW
+	// ==========================================
+	for rank := 8; rank >= 1; rank-- {
+		for file := 1; file <= 8; file++ {
+			x := s.boardX + float64(file-1)*s.squareSize
+			y := s.boardY + float64(8-rank)*s.squareSize
+
+			loc := game.Location{File: file, Rank: rank}
+			_, isOwned := s.profile.BoardAndBench.Squares[loc]
+
+			var matchingOffer *draft.ShopItem
+			for i, item := range s.tray.Squares {
+				if item.UnlockSquare == loc {
+					matchingOffer = &s.tray.Squares[i]
+					break
+				}
+			}
+
+			var tileColor color.RGBA
+			if isOwned {
+				tileColor = s.profile.Theme.LightSquare
+				if (rank+file)%2 == 0 {
+					tileColor = s.profile.Theme.DarkSquare
+				}
+			} else {
+				tileColor = color.RGBA{60, 60, 65, 255}
+				if (rank+file)%2 == 0 {
+					tileColor = color.RGBA{45, 45, 50, 255}
+				}
+			}
+
+			ebitenutil.DrawRect(screen, x, y, s.squareSize-1, s.squareSize-1, tileColor)
+
+			if matchingOffer != nil {
+				ebitenutil.DrawRect(screen, x, y, s.squareSize-1, 3, color.RGBA{210, 160, 50, 255})
+				ebitenutil.DrawRect(screen, x, y, 3, s.squareSize-1, color.RGBA{210, 160, 50, 255})
+
+				priceTag := fmt.Sprintf("$%d", matchingOffer.Cost)
+				s.DrawScaledText(screen, priceTag, x+s.squareSize/2-10, y+s.squareSize/2-6, s.squareSize*0.3, color.RGBA{210, 160, 50, 255})
+			}
+		}
 	}
 
-	ebitenutil.DrawRect(screen, s.rerollBtn.x, s.rerollBtn.y, s.rerollBtn.w, s.rerollBtn.h, color.RGBA{140, 110, 40, 255})
-	ebitenutil.DebugPrintAt(screen, "REROLL (1G)", int(s.rerollBtn.x+20), int(s.rerollBtn.y+12))
+	// ==========================================
+	// 4. RENDER EXPANDED BOTTOM ROW (BENCH INVENTORY)
+	// ==========================================
+	benchY := s.boardY + s.boardSize + 15
+	ebitenutil.DrawRect(screen, 0, benchY, winW, benchTrayH, bColor(40, 40, 45))
 
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Log: %s", s.statusMessage), 40, 570)
-}
+	benchTextH := benchTrayH * 0.12
+	s.DrawScaledText(screen, fmt.Sprintf("BENCH INVENTORY (%d items):", len(s.profile.BoardAndBench.Bench)), 20, benchY+10, benchTextH, color.White)
 
-func (s *ShopScene) Layout(outsideWidth, outsideHeigh int) (int, int) {
-	return 640, 640
+	slotPadding := 8.0
+	slotSize := benchTrayH - 45
+	startX := 20.0
+	currentY := benchY + 35
+
+	for idx, piece := range s.profile.BoardAndBench.Bench {
+		slotX := startX + float64(idx)*(slotSize+slotPadding)
+
+		if slotX+slotSize > winW-20 {
+			slotX = startX + float64(idx%6)*(slotSize+slotPadding)
+			currentY = benchY + 35 + slotSize + slotPadding
+		}
+
+		sprite := GetPieceSprite(piece)
+		if sprite != nil {
+			op := &ebiten.DrawImageOptions{}
+
+			targetSpriteH := slotSize * .75
+			scaleX := targetSpriteH / float64(SpriteW)
+			scaleY := targetSpriteH / float64(SpriteH)
+
+			scaledPieceW := float64(SpriteW) * scaleX
+			scaledPieceH := float64(SpriteH) * scaleY
+
+			paddingX := (slotSize - scaledPieceW) / 2.0
+			paddingY := (slotSize - scaledPieceH) / 3.0
+
+			op.GeoM.Scale(scaleX, scaleY)
+			op.GeoM.Translate(slotX+paddingX, currentY+paddingY)
+
+			screen.DrawImage(sprite, op)
+		}
+	}
+
+	// 5. Status Footer Layout
+	footerTextH := winH * .022
+	footerY := winH - footerTextH - 10
+	s.DrawScaledText(screen, fmt.Sprintf("System Log: %s", s.statusMessage), 20, footerY, footerTextH, color.RGBA{180, 180, 180, 255})
 }
 
 func (s *ShopScene) getUnitItemRect(itemID string) imageRect {
 	for i, c := range s.tray.Units {
 		if c.ID == itemID {
-			return imageRect{x: float64(40 + i*90), y: 130, w: 85, h: 85}
+			itemW := (s.lastWinW - 200) / 4
+			itemH := s.lastWinH * 0.12
+			x := 40.0 + float64(i)*(itemW+15.0)
+			y := (s.lastWinH * 0.18 / 2) - (itemH / 2) + 10
+
+			return imageRect{x: x, y: y, w: itemW, h: itemH}
 		}
 	}
 	return imageRect{}
 }
 
-func (s *ShopScene) getSquareItemRect(itemID string) imageRect {
-	for i, c := range s.tray.Squares {
-		if c.ID == itemID {
-			return imageRect{x: float64(360 + i*115), y: 130, w: 100, h: 100}
-		}
-	}
-	return imageRect{}
+func (s *ShopScene) Layout(outsideWidth, outsideHeight int) (int, int) {
+	return outsideWidth, outsideHeight
 }
 
 func (s *ShopScene) Destroy() {
-	// For now, this acts as a placeholder for saving state or releasing textures.
-	log.Println("Shop Scene destroyed, draft variables safely finalized.")
+	//Placeholder for between screens
+	fmt.Println("Shop components flushed.")
+}
+
+func bColor(r, g, b uint8) color.RGBA { return color.RGBA{r, g, b, 255} }
+
+func (s *ShopScene) DrawScaledText(screen *ebiten.Image, text string, x, y, targetHeight float64, clr color.Color) {
+	textW := len(text) * 7
+	if textW == 0 {
+		textW = 1
+	}
+	textBuffer := ebiten.NewImage(textW, 14)
+
+	ebitenutil.DebugPrint(textBuffer, text)
+
+	scaleFactor := targetHeight / 12.0
+
+	op := &ebiten.DrawImageOptions{}
+
+	if clr != nil {
+		r, g, b, a := clr.RGBA()
+		op.ColorScale.Scale(float32(r)/65535, float32(g)/65535, float32(b)/65535, float32(a)/65535)
+	}
+
+	op.GeoM.Scale(scaleFactor, scaleFactor)
+	op.GeoM.Translate(x, y)
+
+	screen.DrawImage(textBuffer, op)
 }

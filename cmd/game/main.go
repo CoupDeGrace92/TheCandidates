@@ -74,6 +74,7 @@ func (m *MainGameApp) Layout(outsideWidth, outsideHeigh int) (int, int) {
 } */
 
 func main() {
+	scene.LoadAssets("assets/images/GenericChessPiecesSprite.png")
 	profile := game.NewDefaultProfile("white", true)
 	manager := draft.NewDraftManager(10)
 	shop := scene.NewShopScene(profile, manager)

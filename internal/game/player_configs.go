@@ -33,11 +33,14 @@ func NewDefaultProfile(id string, isHuman bool) *PlayerProfile {
 			allowed[Location{File: file, Rank: rank}] = struct{}{}
 		}
 	}
-
+	King := Piece{
+		Type:  King,
+		Color: White,
+	}
 	wbs := make(BoardState)
 	bb := PlayerPieces{
 		Board:   &wbs,
-		Bench:   []Piece{},
+		Bench:   []Piece{King},
 		Squares: allowed,
 	}
 

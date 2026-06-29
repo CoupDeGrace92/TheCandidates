@@ -32,11 +32,11 @@ func TestStockfishInstance_LifecycleAndMove(t *testing.T) {
 	assert.NotNil(t, instance.stdout)
 
 	startFEN := "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-	move, err := instance.RequestMove(startFEN)
+	result, err := instance.RequestMove(startFEN)
 
 	require.NoError(t, err)
-	assert.NotEmpty(t, move)
-	assert.Len(t, move, 4)
+	assert.NotEmpty(t, result.Move)
+	assert.Len(t, result.Move, 4)
 
 	newCfg := Config{SkillLevel: 15, MoveTimeMs: 100}
 	assert.NotPanics(t, func() {
