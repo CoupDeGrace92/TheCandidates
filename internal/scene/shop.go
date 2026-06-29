@@ -3,6 +3,7 @@ package scene
 import (
 	"fmt"
 	"image/color"
+	"time"
 
 	"github.com/CoupDeGrace92/candidates/internal/draft"
 	"github.com/CoupDeGrace92/candidates/internal/game"
@@ -29,6 +30,15 @@ type ShopScene struct {
 
 	//Temp reroll button with collision boundaries
 	rerollBtn imageRect
+
+	//Input Tracking
+	selectedBenchIndex  int           //set to -1 if no bench piece is selected
+	selectedBoardSquare game.Location //set to (0,0) if no board tile is selected
+	isBenchSelected     bool
+	isBoardSelected     bool
+
+	lastClickTime   time.Time     //Used for double clicks
+	lastClickSquare game.Location //check for continuity on double clicks - both clicks must be same square
 }
 
 type imageRect struct {
@@ -53,59 +63,138 @@ func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *Sho
 }
 
 func (s *ShopScene) Update() error {
+	// Catch mouse inputs strictly on the single frame the click occurs
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
+		now := time.Now()
+		bb := s.profile.BoardAndBench
 
-		// 1. Check Reroll Action
+		// ==================================================
+		// 1. EVALUATE SHOP BUTTONS AND CARD PURCHASES FIRST
+		// ==================================================
 		if s.rerollBtn.Contains(mx, my) {
-			if err := s.manager.ProcessReroll(&s.tray, s.profile); err != nil {
-				s.statusMessage = fmt.Sprintf("Reroll Failed: %v", err)
-			} else {
-				s.statusMessage = "Shop Refreshed! Global unit bag adjusted."
-			}
+			_ = s.manager.ProcessReroll(&s.tray, s.profile)
+			s.clearSelection()
 			return nil
 		}
-
-		// 2. Check Unit item Actions
-		for _, item := range s.tray.Units {
-			rect := s.getUnitItemRect(item.ID)
-			if rect.Contains(mx, my) {
-				if err := s.manager.BuyItem(&s.tray, item.ID, s.profile); err != nil {
-					s.statusMessage = fmt.Sprintf("Purchase Error: %v", err)
-				} else {
-					s.statusMessage = "Unit successfully drafted to your Bench!"
-				}
+		for _, card := range s.tray.Units {
+			if s.getUnitItemRect(card.ID).Contains(mx, my) {
+				_ = s.manager.BuyItem(&s.tray, card.ID, s.profile)
 				return nil
 			}
 		}
 
-		// 3. Check Chess Board Square Purchase Click Colliders
-		// Players can now click directly on a map grid square to execute a purchase!
+		// ==================================================
+		// 2. INTERCEPT CHESSBOARD INTERACTION BOXES
+		// ==================================================
 		for file := 1; file <= 8; file++ {
 			for rank := 1; rank <= 8; rank++ {
 				x := s.boardX + float64(file-1)*s.squareSize
-				y := s.boardY + float64(8-rank)*s.squareSize // Top-down mirror calculation
+				y := s.boardY + float64(8-rank)*s.squareSize
 				squareRect := imageRect{x: x, y: y, w: s.squareSize, h: s.squareSize}
 
 				if squareRect.Contains(mx, my) {
-					loc := game.Location{File: file, Rank: rank}
+					currentLoc := game.Location{File: file, Rank: rank}
+					_, pieceOccupied := (*bb.Board)[currentLoc]
 
-					// Scan if this specific square is currently on offer inside our tray
-					for _, item := range s.tray.Squares {
-						if item.UnlockSquare == loc {
-							if err := s.manager.BuyItem(&s.tray, item.ID, s.profile); err != nil {
-								s.statusMessage = fmt.Sprintf("Territory Error: %v", err)
-							} else {
-								s.statusMessage = fmt.Sprintf("Territory Expanded to %c%d!", rune('a'+file-1), rank)
-							}
+					// ----------------------------------------------
+					// BOUNDARY A: DOUBLE-CLICK TO RECALL PIECE TO BENCH
+					// ----------------------------------------------
+					// Double click threshold around 250-300ms
+					if pieceOccupied && now.Sub(s.lastClickTime) < 280*time.Millisecond && s.lastClickSquare == currentLoc {
+						if bb.BoardToBench(currentLoc) {
+							s.statusMessage = "Piece recalled cleanly back to your Bench."
+							s.clearSelection()
 							return nil
 						}
 					}
+
+					s.lastClickTime = now
+					s.lastClickSquare = currentLoc
+
+					// ----------------------------------------------
+					// BOUNDARY B: COMPLETE ACTIVE SHUFFLING SELECTION
+					// ----------------------------------------------
+					if s.isBenchSelected {
+						if bb.BenchToBoard(s.selectedBenchIndex, currentLoc) {
+							s.statusMessage = "Unit deployed successfully onto the board grid."
+						} else {
+							s.statusMessage = "Placement Failed: Square is locked or occupied."
+						}
+						s.clearSelection()
+						return nil
+					}
+
+					if s.isBoardSelected {
+						if bb.BoardToBoard(s.selectedBoardSquare, currentLoc) {
+							s.statusMessage = "Unit re-positioned on the board."
+						} else {
+							s.statusMessage = "Movement Failed: Target square is invalid."
+						}
+						s.clearSelection()
+						return nil
+					}
+
+					// ----------------------------------------------
+					// BOUNDARY C: INITIALIZE FRESH SELECTION SOURCE
+					// ----------------------------------------------
+					// If the square is an active card offer in the shop, purchase it instead of selecting
+					isOffer := false
+					for _, card := range s.tray.Squares {
+						if card.UnlockSquare == currentLoc {
+							_ = s.manager.BuyItem(&s.tray, card.ID, s.profile)
+							isOffer = true
+							break
+						}
+					}
+
+					if !isOffer && pieceOccupied {
+						s.selectedBoardSquare = currentLoc
+						s.isBoardSelected = true
+						s.statusMessage = fmt.Sprintf("Selected piece at %c%d. Click destination tile, or double-click to recall.", rune('a'+file-1), rank)
+					}
+					return nil
 				}
 			}
 		}
+
+		// ==================================================
+		// 3. INTERCEPT BENCH SELECTION TRACKING BOXES
+		// ==================================================
+		benchY := s.boardY + s.boardSize + 15
+		slotPadding := 8.0
+		slotSize := s.lastWinH*0.18 - 45
+		startX := 20.0
+		currentY := benchY + 35
+
+		for idx := range bb.Bench {
+			slotX := startX + float64(idx)*(slotSize+slotPadding)
+			if slotX+slotSize > s.lastWinW-20 {
+				slotX = startX + float64(idx%6)*(slotSize+slotPadding)
+				currentY = benchY + 35 + slotSize + slotPadding
+			}
+
+			benchRect := imageRect{x: slotX, y: currentY, w: slotSize, h: slotSize}
+			if benchRect.Contains(mx, my) {
+				s.clearSelection()
+				s.selectedBenchIndex = idx
+				s.isBenchSelected = true
+				s.statusMessage = fmt.Sprintf("Bench unit selected. Click any highlighted territory square on the board to deploy.")
+				return nil
+			}
+		}
+
+		// Clicked empty background wallpaper: Clear active placement buffers cleanly
+		s.clearSelection()
 	}
 	return nil
+}
+
+func (s *ShopScene) clearSelection() {
+	s.selectedBenchIndex = -1
+	s.selectedBoardSquare = game.Location{File: 0, Rank: 0}
+	s.isBenchSelected = false
+	s.isBoardSelected = false
 }
 
 func (s *ShopScene) Draw(screen *ebiten.Image) {
@@ -177,8 +266,10 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 	s.DrawScaledText(screen, "REROLL (1G)", s.rerollBtn.x+15, s.rerollBtn.y+s.rerollBtn.h/2-6, s.rerollBtn.h*0.2, color.White)
 
 	// ==========================================
-	// 3. RENDER MIDDLE ROW
+	// 3. RENDER BOARD
 	// ==========================================
+	bb := s.profile.BoardAndBench
+
 	for rank := 8; rank >= 1; rank-- {
 		for file := 1; file <= 8; file++ {
 			x := s.boardX + float64(file-1)*s.squareSize
@@ -210,12 +301,33 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 
 			ebitenutil.DrawRect(screen, x, y, s.squareSize-1, s.squareSize-1, tileColor)
 
+			isSelectedSquare := s.isBoardSelected && s.selectedBoardSquare == loc
+			if isSelectedSquare {
+				// Draws a semi-transparent glowing gold backdrop layer directly inside the tile bounds
+				ebitenutil.DrawRect(screen, x, y, s.squareSize-1, s.squareSize-1, color.RGBA{240, 200, 50, 120})
+			}
+
 			if matchingOffer != nil {
 				ebitenutil.DrawRect(screen, x, y, s.squareSize-1, 3, color.RGBA{210, 160, 50, 255})
 				ebitenutil.DrawRect(screen, x, y, 3, s.squareSize-1, color.RGBA{210, 160, 50, 255})
 
 				priceTag := fmt.Sprintf("$%d", matchingOffer.Cost)
 				s.DrawScaledText(screen, priceTag, x+s.squareSize/2-10, y+s.squareSize/2-6, s.squareSize*0.3, color.RGBA{210, 160, 50, 255})
+			}
+
+			//Render the pieces on the board
+			if piece, occupied := (*bb.Board)[loc]; occupied {
+				if sprite := GetPieceSprite(piece); sprite != nil {
+					op := &ebiten.DrawImageOptions{}
+
+					scaleX := s.squareSize / float64(SpriteW)
+					scaleY := s.squareSize / float64(SpriteH)
+
+					op.GeoM.Scale(scaleX, scaleY)
+					op.GeoM.Translate(x, y)
+
+					screen.DrawImage(sprite, op)
+				}
 			}
 		}
 	}
@@ -240,6 +352,12 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 		if slotX+slotSize > winW-20 {
 			slotX = startX + float64(idx%6)*(slotSize+slotPadding)
 			currentY = benchY + 35 + slotSize + slotPadding
+		}
+
+		isThisBenchSelected := s.isBenchSelected && s.selectedBenchIndex == idx
+		if isThisBenchSelected {
+			borderGlow := 3.0
+			ebitenutil.DrawRect(screen, slotX-borderGlow, currentY-borderGlow, slotSize+(borderGlow*2), slotSize+(borderGlow*2), color.RGBA{0, 255, 230, 255})
 		}
 
 		sprite := GetPieceSprite(piece)
