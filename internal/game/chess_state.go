@@ -437,3 +437,17 @@ func (p *PlayerPieces) RandomOpenSquare(excluded map[Location]struct{}) (Locatio
 	chosenIndex := rand.Intn(len(eligible))
 	return eligible[chosenIndex], true
 }
+
+func (l Location) ToRelative(playerColor PieceColor) Location {
+	if playerColor == Black {
+		return l.Transform()
+	}
+	return l
+}
+
+func (l Location) Transform() Location {
+	return Location{
+		File: 9 - l.File,
+		Rank: 9 - l.Rank,
+	}
+}

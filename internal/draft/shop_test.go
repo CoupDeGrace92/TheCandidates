@@ -155,7 +155,7 @@ func TestGetEligibleSquares_Filtering(t *testing.T) {
 	profile := game.NewDefaultProfile("white", true)
 
 	// Act
-	eligible := GetEligibleSquares(profile.BoardAndBench.Squares)
+	eligible := GetEligibleSquares(profile.BoardAndBench.Squares, game.White)
 
 	// Assert
 	// At game start, exactly all 8 squares of Rank 3 should be eligible
@@ -168,7 +168,7 @@ func TestGetEligibleSquares_Filtering(t *testing.T) {
 	profile.BoardAndBench.Squares[game.Location{File: 4, Rank: 3}] = struct{}{} // d3 owned
 
 	// Re-evaluate adjacency paths
-	newEligible := GetEligibleSquares(profile.BoardAndBench.Squares)
+	newEligible := GetEligibleSquares(profile.BoardAndBench.Squares, game.White)
 
 	// The map should now contain unowned Rank 3 squares AND neighbor expansions onto Rank 4 (c4, d4, e4)
 	hasD4 := false

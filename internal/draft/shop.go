@@ -88,7 +88,7 @@ func (dm *DraftManager) RecycleTray(tray *ShopTray) {
 	}
 }
 
-func (dm *DraftManager) GenerateFreshTray(allowedSquares map[game.Location]struct{}) ShopTray {
+func (dm *DraftManager) GenerateFreshTray(allowedSquares map[game.Location]struct{}, playerColor game.PieceColor) ShopTray {
 	tray := ShopTray{
 		Units:   make([]ShopItem, 3),
 		Squares: make([]ShopItem, 2),
@@ -120,7 +120,7 @@ func (dm *DraftManager) GenerateFreshTray(allowedSquares map[game.Location]struc
 	}
 
 	//Square selection here - we want it to be connected to the players current board, not just random squares.  Rank3 more likely than rank 5 etc.
-	eligibleSquares := GetEligibleSquares(allowedSquares)
+	eligibleSquares := GetEligibleSquares(allowedSquares, playerColor)
 	for i := 0; i < 2; i++ {
 		if len(eligibleSquares) == 0 {
 			break
@@ -167,7 +167,11 @@ func (dm *DraftManager) GenerateFreshTray(allowedSquares map[game.Location]struc
 		}
 
 		chosenLoc := eligibleSquares[chosenIndex]
-		cost := GetSquareCost(chosenLoc.Rank)
+		relativeRank := chosenLoc.Rank
+		if playerColor == game.Black {
+			relativeRank = 9 - chosenLoc.Rank
+		}
+		cost := GetSquareCost(relativeRank)
 
 		tray.Squares[i] = ShopItem{
 			ID:           fmt.Sprintf("square_slot_%d_%d", i, dm.rng.Int63()),
@@ -226,19 +230,24 @@ func (dm *DraftManager) ProcessReroll(tray *ShopTray, profile *game.PlayerProfil
 	dm.RecycleTray(tray)
 	profile.Gold -= CostReroll
 
-	*tray = dm.GenerateFreshTray(profile.BoardAndBench.Squares)
+	*tray = dm.GenerateFreshTray(profile.BoardAndBench.Squares, profile.Color)
 	return nil
 }
 
-func GetEligibleSquares(allowedSquares map[game.Location]struct{}) []game.Location {
+func GetEligibleSquares(allowedSquares map[game.Location]struct{}, playerColor game.PieceColor) []game.Location {
 	eligibleMap := make(map[game.Location]struct{})
+
+	targetFirstLineRank := 3
+	if playerColor == game.Black {
+		targetFirstLineRank = 6
+	}
 
 	dx := []int{-1, 0, 1, -1, 1, -1, 0, 1}
 	dy := []int{-1, -1, -1, 0, 0, 1, 1, 1}
 
 	// 1. All squares on Rank 3 are automatically available for selection at start
 	for file := 1; file <= 8; file++ {
-		loc := game.Location{File: file, Rank: 3}
+		loc := game.Location{File: file, Rank: targetFirstLineRank}
 		if _, owned := allowedSquares[loc]; !owned {
 			eligibleMap[loc] = struct{}{}
 		}
@@ -310,7 +319,7 @@ func (dm *DraftManager) BuyItem(tray *ShopTray, itemID string, profile *game.Pla
 	case ItemPiece:
 		newPiece := game.Piece{
 			Type:  targetItem.PieceType,
-			Color: game.PieceColor(profile.PlayerID),
+			Color: profile.Color,
 		}
 		bb.Bench = append(bb.Bench, newPiece)
 	case ItemSquare:

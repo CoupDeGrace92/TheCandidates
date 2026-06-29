@@ -8,9 +8,10 @@ type BoardTheme struct {
 }
 
 type PlayerProfile struct {
-	PlayerID string `json:"player_id"`
-	IsHuman  bool   `json:"is_human"`
-	Gold     int    `json:"gold"`
+	PlayerID string     `json:"player_id"`
+	IsHuman  bool       `json:"is_human"`
+	Gold     int        `json:"gold"`
+	Color    PieceColor `json:"color"`
 
 	SkillLevel      int `json:"skill_level"`
 	MoveTimeMs      int `json:"move_time_ms"`
@@ -48,6 +49,7 @@ func NewDefaultProfile(id string, isHuman bool) *PlayerProfile {
 		PlayerID:        id,
 		IsHuman:         isHuman,
 		Gold:            10,
+		Color:           White,
 		SkillLevel:      7,
 		MoveTimeMs:      150,
 		MaxDrawishTurns: 14,
@@ -58,4 +60,32 @@ func NewDefaultProfile(id string, isHuman bool) *PlayerProfile {
 		},
 		BoardAndBench: &bb,
 	}
+}
+
+func (profile *PlayerProfile) SwitchColorIfDifferent(newColor PieceColor) {
+	if profile == nil || profile.Color == newColor || profile.BoardAndBench == nil {
+		return
+	}
+
+	bb := profile.BoardAndBench
+
+	newSquares := make(map[Location]struct{})
+	for loc := range bb.Squares {
+		nLoc := loc.Transform()
+		newSquares[nLoc] = struct{}{}
+	}
+	bb.Squares = newSquares
+
+	newBoard := make(BoardState)
+	for loc, piece := range *bb.Board {
+		piece.Color = newColor
+		newBoard[loc.Transform()] = piece
+	}
+	*bb.Board = newBoard
+
+	for i := range bb.Bench {
+		bb.Bench[i].Color = newColor
+	}
+
+	profile.Color = newColor
 }

@@ -3,6 +3,7 @@ package scene
 import (
 	"fmt"
 	"image/color"
+	"math"
 	"time"
 
 	"github.com/CoupDeGrace92/candidates/internal/draft"
@@ -11,6 +12,14 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+)
+
+type DragSource string
+
+const (
+	DragFromNone  DragSource = "none"
+	DragFromBench DragSource = "bench"
+	DragFromBoard DragSource = "board"
 )
 
 type ShopScene struct {
@@ -28,6 +37,9 @@ type ShopScene struct {
 	boardSize  float64
 	squareSize float64
 
+	lastLayoutH int
+	lastLayoutW int
+
 	//Temp reroll button with collision boundaries
 	rerollBtn imageRect
 
@@ -39,6 +51,15 @@ type ShopScene struct {
 
 	lastClickTime   time.Time     //Used for double clicks
 	lastClickSquare game.Location //check for continuity on double clicks - both clicks must be same square
+
+	startX, startY int //Stores initial click pixel - allows us to check drag vs click to click
+
+	dragSource         DragSource
+	draggedBenchIdx    int
+	draggedBoardSquare game.Location
+	isDragging         bool
+
+	dragDrawOp *ebiten.DrawImageOptions
 }
 
 type imageRect struct {
@@ -51,7 +72,7 @@ func (r imageRect) Contains(x, y int) bool {
 }
 
 func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *ShopScene {
-	startingTray := manager.GenerateFreshTray(profile.BoardAndBench.Squares)
+	startingTray := manager.GenerateFreshTray(profile.BoardAndBench.Squares, profile.Color)
 
 	return &ShopScene{
 		profile:       profile,
@@ -59,19 +80,34 @@ func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *Sho
 		tray:          startingTray,
 		statusMessage: "Welcome to the Draft Phase! Select items to purchase.",
 		rerollBtn:     imageRect{x: 480, y: 560, w: 120, h: 40},
+		dragDrawOp:    &ebiten.DrawImageOptions{},
 	}
 }
 
 func (s *ShopScene) Update() error {
-	// Catch mouse inputs strictly on the single frame the click occurs
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		mx, my := ebiten.CursorPosition()
-		now := time.Now()
-		bb := s.profile.BoardAndBench
+	mx, my := ebiten.CursorPosition()
+	bb := s.profile.BoardAndBench
+	playerColor := s.profile.Color
 
-		// ==================================================
-		// 1. EVALUATE SHOP BUTTONS AND CARD PURCHASES FIRST
-		// ==================================================
+	// Helper to find absolute map grid tile coordinates under the current cursor position
+	hoveredSquare := game.Location{File: 0, Rank: 0}
+	for screenRow := 0; screenRow < 8; screenRow++ {
+		for screenCol := 0; screenCol < 8; screenCol++ {
+			x := s.boardX + float64(screenCol)*s.squareSize
+			y := s.boardY + float64(screenRow)*s.squareSize
+			if float64(mx) >= x && float64(mx) < x+s.squareSize && float64(my) >= y && float64(my) < y+s.squareSize {
+				if playerColor == game.Black {
+					hoveredSquare = game.Location{File: screenCol + 1, Rank: screenRow + 1}
+				} else {
+					hoveredSquare = game.Location{File: screenCol + 1, Rank: 8 - screenRow}
+				}
+			}
+		}
+	}
+
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		s.startX, s.startY = mx, my // Anchor initial mouse click coordinates
+
 		if s.rerollBtn.Contains(mx, my) {
 			_ = s.manager.ProcessReroll(&s.tray, s.profile)
 			s.clearSelection()
@@ -84,83 +120,31 @@ func (s *ShopScene) Update() error {
 			}
 		}
 
-		// ==================================================
-		// 2. INTERCEPT CHESSBOARD INTERACTION BOXES
-		// ==================================================
-		for file := 1; file <= 8; file++ {
-			for rank := 1; rank <= 8; rank++ {
-				x := s.boardX + float64(file-1)*s.squareSize
-				y := s.boardY + float64(8-rank)*s.squareSize
-				squareRect := imageRect{x: x, y: y, w: s.squareSize, h: s.squareSize}
-
-				if squareRect.Contains(mx, my) {
-					currentLoc := game.Location{File: file, Rank: rank}
-					_, pieceOccupied := (*bb.Board)[currentLoc]
-
-					// ----------------------------------------------
-					// BOUNDARY A: DOUBLE-CLICK TO RECALL PIECE TO BENCH
-					// ----------------------------------------------
-					// Double click threshold around 250-300ms
-					if pieceOccupied && now.Sub(s.lastClickTime) < 280*time.Millisecond && s.lastClickSquare == currentLoc {
-						if bb.BoardToBench(currentLoc) {
-							s.statusMessage = "Piece recalled cleanly back to your Bench."
-							s.clearSelection()
-							return nil
-						}
-					}
-
-					s.lastClickTime = now
-					s.lastClickSquare = currentLoc
-
-					// ----------------------------------------------
-					// BOUNDARY B: COMPLETE ACTIVE SHUFFLING SELECTION
-					// ----------------------------------------------
-					if s.isBenchSelected {
-						if bb.BenchToBoard(s.selectedBenchIndex, currentLoc) {
-							s.statusMessage = "Unit deployed successfully onto the board grid."
-						} else {
-							s.statusMessage = "Placement Failed: Square is locked or occupied."
-						}
+		if hoveredSquare.File != 0 {
+			if _, occupied := (*bb.Board)[hoveredSquare]; occupied {
+				if time.Since(s.lastClickTime) < 280*time.Millisecond && s.lastClickSquare == hoveredSquare {
+					if bb.BoardToBench(hoveredSquare) {
+						s.statusMessage = "Piece recalled cleanly back to your Bench."
 						s.clearSelection()
 						return nil
 					}
+				}
+				s.lastClickTime = time.Now()
+				s.lastClickSquare = hoveredSquare
 
-					if s.isBoardSelected {
-						if bb.BoardToBoard(s.selectedBoardSquare, currentLoc) {
-							s.statusMessage = "Unit re-positioned on the board."
-						} else {
-							s.statusMessage = "Movement Failed: Target square is invalid."
-						}
-						s.clearSelection()
-						return nil
-					}
+				s.dragSource = DragFromBoard
+				s.draggedBoardSquare = hoveredSquare
+				return nil
+			}
 
-					// ----------------------------------------------
-					// BOUNDARY C: INITIALIZE FRESH SELECTION SOURCE
-					// ----------------------------------------------
-					// If the square is an active card offer in the shop, purchase it instead of selecting
-					isOffer := false
-					for _, card := range s.tray.Squares {
-						if card.UnlockSquare == currentLoc {
-							_ = s.manager.BuyItem(&s.tray, card.ID, s.profile)
-							isOffer = true
-							break
-						}
-					}
-
-					if !isOffer && pieceOccupied {
-						s.selectedBoardSquare = currentLoc
-						s.isBoardSelected = true
-						s.statusMessage = fmt.Sprintf("Selected piece at %c%d. Click destination tile, or double-click to recall.", rune('a'+file-1), rank)
-					}
+			for _, card := range s.tray.Squares {
+				if card.UnlockSquare == hoveredSquare {
+					_ = s.manager.BuyItem(&s.tray, card.ID, s.profile)
 					return nil
 				}
 			}
 		}
 
-		// ==================================================
-		// 3. INTERCEPT BENCH SELECTION TRACKING BOXES
-		// ==================================================
 		benchY := s.boardY + s.boardSize + 15
 		slotPadding := 8.0
 		slotSize := s.lastWinH*0.18 - 45
@@ -174,19 +158,78 @@ func (s *ShopScene) Update() error {
 				currentY = benchY + 35 + slotSize + slotPadding
 			}
 
-			benchRect := imageRect{x: slotX, y: currentY, w: slotSize, h: slotSize}
-			if benchRect.Contains(mx, my) {
-				s.clearSelection()
-				s.selectedBenchIndex = idx
-				s.isBenchSelected = true
-				s.statusMessage = fmt.Sprintf("Bench unit selected. Click any highlighted territory square on the board to deploy.")
+			if float64(mx) >= slotX && float64(mx) < slotX+slotSize && float64(my) >= currentY && float64(my) < currentY+slotSize {
+				s.dragSource = DragFromBench
+				s.draggedBenchIdx = idx
 				return nil
 			}
 		}
+	}
 
-		// Clicked empty background wallpaper: Clear active placement buffers cleanly
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && s.dragSource != DragFromNone && !s.isDragging {
+		dx := mx - s.startX
+		dy := my - s.startY
+		distanceMoved := math.Sqrt(float64(dx*dx + dy*dy))
+
+		if distanceMoved > 10.0 {
+			s.isDragging = true
+			s.statusMessage = "Dragging unit... Drop on a valid highlight square."
+		}
+	}
+
+	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
+		if s.isDragging {
+			s.isDragging = false
+			if s.dragSource == DragFromBench && hoveredSquare.File != 0 {
+				_ = bb.BenchToBoard(s.draggedBenchIdx, hoveredSquare)
+			} else if s.dragSource == DragFromBoard {
+				if hoveredSquare.File != 0 && hoveredSquare != s.draggedBoardSquare {
+					_ = bb.BoardToBoard(s.draggedBoardSquare, hoveredSquare)
+				} else if float64(my) >= s.boardY+s.boardSize+15 {
+					_ = bb.BoardToBench(s.draggedBoardSquare)
+				}
+			}
+			s.dragSource = DragFromNone
+			s.clearSelection()
+			return nil
+		}
+
+		if s.dragSource != DragFromNone {
+			if s.dragSource == DragFromBench {
+				s.clearSelection()
+				s.selectedBenchIndex = s.draggedBenchIdx
+				s.isBenchSelected = true
+				s.statusMessage = "Bench unit selected via click. Tap an unlocked board square to deploy."
+			} else if s.dragSource == DragFromBoard {
+				if s.isBenchSelected && hoveredSquare == s.draggedBoardSquare {
+					_ = bb.BenchToBoard(s.selectedBenchIndex, hoveredSquare)
+					s.clearSelection()
+				} else if s.isBoardSelected && s.selectedBoardSquare != s.draggedBoardSquare {
+					_ = bb.BoardToBoard(s.selectedBoardSquare, s.draggedBoardSquare)
+					s.clearSelection()
+				} else {
+					s.clearSelection()
+					s.selectedBoardSquare = s.draggedBoardSquare
+					s.isBoardSelected = true
+					s.statusMessage = "Frontline piece selected via click. Click an open destination tile."
+				}
+			}
+			s.dragSource = DragFromNone
+			return nil
+		}
+
+		//If clicked on non-piece/non-square, reset clicks
+		if hoveredSquare.File != 0 && (s.isBenchSelected || s.isBoardSelected) {
+			if s.isBenchSelected {
+				_ = bb.BenchToBoard(s.selectedBenchIndex, hoveredSquare)
+			} else if s.isBoardSelected {
+				_ = bb.BoardToBoard(s.selectedBoardSquare, hoveredSquare)
+			}
+		}
+		s.dragSource = DragFromNone
 		s.clearSelection()
 	}
+
 	return nil
 }
 
@@ -207,151 +250,165 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 	s.lastWinW = winW
 	s.lastWinH = winH
 
-	// ==========================================
-	// 1. DYNAMIC RESPONSIVE LAYOUT CALCULATOR
-	// ==========================================
-	// Allocate proportions: Top Shop Tray takes 18%, Bottom Bench takes 18%
+	// =========================================
+	//      Core Proportional Allocations
+	// =========================================
 	shopTrayH := winH * 0.18
 	benchTrayH := winH * 0.18
-	usableBoardH := winH - shopTrayH - benchTrayH - 60 // Leave 60px padding for status text
+	usableBoardH := winH - shopTrayH - benchTrayH - 60
 
 	s.squareSize = usableBoardH / 8
 	if (winW-100)/8 < s.squareSize {
 		s.squareSize = (winW - 100) / 8
 	}
 	s.boardSize = s.squareSize * 8
-
 	s.boardX = (winW - s.boardSize) / 2
 	s.boardY = shopTrayH + 20
 
+	bb := s.profile.BoardAndBench
+	playerColor := s.profile.Color
+
 	// ==========================================
-	// 2. RENDER TOP ROW SHOP itemS (UNITS)
+	// 		        SHOP Renderer
 	// ==========================================
 	ebitenutil.DrawRect(screen, 0, 0, winW, shopTrayH, bColor(45, 45, 50))
-	headerTextH := shopTrayH * 0.15
-	s.DrawScaledText(screen, fmt.Sprintf("GOLD: %d G | SKILL: %d / 20", s.profile.Gold, s.profile.SkillLevel), 20, 10, headerTextH, color.White)
 
-	for _, item := range s.tray.Units {
-		r := s.getUnitItemRect(item.ID)
+	headerTextH := shopTrayH * 0.15
+	s.DrawScaledText(screen, fmt.Sprintf("GOLD: %d G | SPEED: %d / 20", s.profile.Gold, s.profile.SkillLevel), 20, 10, headerTextH, color.White)
+
+	for _, card := range s.tray.Units {
+		r := s.getUnitItemRect(card.ID)
+
 		ebitenutil.DrawRect(screen, r.x, r.y, r.w, r.h, bColor(60, 60, 75))
 
-		sprite := GetPieceSprite(game.Piece{Type: item.PieceType, Color: game.White})
-		if sprite != nil {
-			op := &ebiten.DrawImageOptions{}
-
-			targetSpriteH := r.h * .6
-			scaleX := targetSpriteH / float64(SpriteW)
-			scaleY := targetSpriteH / float64(SpriteH)
-
-			scaledPieceW := float64(SpriteW) * scaleX
-			scaledPieceH := float64(SpriteH) * scaleY
-
-			paddingX := (r.w - scaledPieceW) / 2.0
-			paddingY := (r.h - scaledPieceH) / 3.0
-
-			op.GeoM.Scale(scaleX, scaleY)
-			op.GeoM.Translate(r.x+paddingX, r.y+paddingY)
-			screen.DrawImage(sprite, op)
+		shopPiece := game.Piece{
+			Type:  card.PieceType,
+			Color: playerColor,
 		}
 
+		if sprite := GetPreScaledSprite(shopPiece); sprite != nil {
+			s.dragDrawOp.GeoM.Reset()
+			s.dragDrawOp.ColorScale.Reset()
+
+			targetSpriteH := r.h * 0.60
+			scaleFactor := targetSpriteH / s.squareSize
+
+			scaledDim := s.squareSize * scaleFactor
+			paddingX := (r.w - scaledDim) / 2.0
+			paddingY := (r.h - scaledDim) / 3.5
+
+			s.dragDrawOp.GeoM.Scale(scaleFactor, scaleFactor)
+			s.dragDrawOp.GeoM.Translate(r.x+paddingX, r.y+paddingY)
+
+			screen.DrawImage(sprite, s.dragDrawOp)
+		}
+
+		priceTagStr := fmt.Sprintf("%d G", card.Cost)
+		priceTextY := r.y + r.h - (r.h * 0.22)
+		s.DrawScaledText(screen, priceTagStr, r.x+15, priceTextY, r.h*0.14, color.White)
 	}
 
-	//Reroll button proportions
-	btnW := s.squareSize * 2.2
-	btnH := s.squareSize * 0.7
-	btnY := (shopTrayH / 2.0) - (btnH / 2.0)
-
-	s.rerollBtn = imageRect{x: winW - btnW - 20, y: btnY, w: btnW, h: btnH}
-	ebitenutil.DrawRect(screen, s.rerollBtn.x, s.rerollBtn.y, s.rerollBtn.w, s.rerollBtn.h, bColor(140, 110, 40))
-	s.DrawScaledText(screen, "REROLL (1G)", s.rerollBtn.x+15, s.rerollBtn.y+s.rerollBtn.h/2-6, s.rerollBtn.h*0.2, color.White)
-
 	// ==========================================
-	// 3. RENDER BOARD
+	// 				Board Renderer
 	// ==========================================
-	bb := s.profile.BoardAndBench
 
-	for rank := 8; rank >= 1; rank-- {
-		for file := 1; file <= 8; file++ {
-			x := s.boardX + float64(file-1)*s.squareSize
-			y := s.boardY + float64(8-rank)*s.squareSize
+	for screenRow := 0; screenRow < 8; screenRow++ {
+		for screenCol := 0; screenCol < 8; screenCol++ {
+			x := s.boardX + float64(screenCol)*s.squareSize
+			y := s.boardY + float64(screenRow)*s.squareSize
 
-			loc := game.Location{File: file, Rank: rank}
-			_, isOwned := s.profile.BoardAndBench.Squares[loc]
+			var absoluteLoc game.Location
+			if playerColor == game.Black {
+				absoluteLoc = game.Location{File: screenCol + 1, Rank: screenRow + 1}
+			} else {
+				absoluteLoc = game.Location{File: screenCol + 1, Rank: 8 - screenRow}
+			}
+
+			_, isOwned := bb.Squares[absoluteLoc]
 
 			var matchingOffer *draft.ShopItem
-			for i, item := range s.tray.Squares {
-				if item.UnlockSquare == loc {
+			for i, card := range s.tray.Squares {
+				if card.UnlockSquare == absoluteLoc {
 					matchingOffer = &s.tray.Squares[i]
 					break
 				}
 			}
 
 			var tileColor color.RGBA
-			if isOwned {
+			if (screenRow+screenCol)%2 == 0 {
 				tileColor = s.profile.Theme.LightSquare
-				if (rank+file)%2 == 0 {
-					tileColor = s.profile.Theme.DarkSquare
-				}
 			} else {
-				tileColor = color.RGBA{60, 60, 65, 255}
-				if (rank+file)%2 == 0 {
-					tileColor = color.RGBA{45, 45, 50, 255}
-				}
+				tileColor = s.profile.Theme.DarkSquare
+			}
+
+			if !isOwned {
+				tileColor.R = uint8(float64(tileColor.R) * 0.35)
+				tileColor.G = uint8(float64(tileColor.G) * 0.35)
+				tileColor.B = uint8(float64(tileColor.B) * 0.35)
+			}
+
+			if s.isBoardSelected && s.selectedBoardSquare == absoluteLoc {
+				tileColor = color.RGBA{240, 200, 50, 120}
 			}
 
 			ebitenutil.DrawRect(screen, x, y, s.squareSize-1, s.squareSize-1, tileColor)
-
-			isSelectedSquare := s.isBoardSelected && s.selectedBoardSquare == loc
-			if isSelectedSquare {
-				// Draws a semi-transparent glowing gold backdrop layer directly inside the tile bounds
-				ebitenutil.DrawRect(screen, x, y, s.squareSize-1, s.squareSize-1, color.RGBA{240, 200, 50, 120})
-			}
 
 			if matchingOffer != nil {
 				ebitenutil.DrawRect(screen, x, y, s.squareSize-1, 3, color.RGBA{210, 160, 50, 255})
 				ebitenutil.DrawRect(screen, x, y, 3, s.squareSize-1, color.RGBA{210, 160, 50, 255})
 
-				priceTag := fmt.Sprintf("$%d", matchingOffer.Cost)
-				s.DrawScaledText(screen, priceTag, x+s.squareSize/2-10, y+s.squareSize/2-6, s.squareSize*0.3, color.RGBA{210, 160, 50, 255})
+				visualFileChar := rune('a' + screenCol)
+				visualRankNum := 8 - screenRow
+				if playerColor == game.Black {
+					visualRankNum = screenRow + 1
+				}
+				priceTag := fmt.Sprintf("%c%d\n$%d", visualFileChar, visualRankNum, matchingOffer.Cost)
+				s.DrawScaledText(screen, priceTag, x+s.squareSize/2-14, y+s.squareSize/2-10, s.squareSize*0.22, color.RGBA{210, 160, 50, 255})
 			}
 
-			//Render the pieces on the board
-			if piece, occupied := (*bb.Board)[loc]; occupied {
-				if sprite := GetPieceSprite(piece); sprite != nil {
-					op := &ebiten.DrawImageOptions{}
+			if piece, occupied := (*bb.Board)[absoluteLoc]; occupied {
+				if sprite := GetPreScaledSprite(piece); sprite != nil {
+					s.dragDrawOp.GeoM.Reset()
+					s.dragDrawOp.ColorScale.Reset()
 
-					scaleX := s.squareSize / float64(SpriteW)
-					scaleY := s.squareSize / float64(SpriteH)
-
-					op.GeoM.Scale(scaleX, scaleY)
-					op.GeoM.Translate(x, y)
-
-					screen.DrawImage(sprite, op)
+					s.dragDrawOp.GeoM.Translate(x, y)
+					screen.DrawImage(sprite, s.dragDrawOp)
 				}
+			}
+
+			if screenCol == 0 {
+				displayRank := 8 - screenRow
+				if playerColor == game.Black {
+					displayRank = screenRow + 1
+				}
+				s.DrawScaledText(screen, fmt.Sprintf("%d", displayRank), s.boardX-20, y+s.squareSize/2-6, s.squareSize*0.25, color.RGBA{150, 150, 150, 255})
+			}
+			if screenRow == 7 {
+				s.DrawScaledText(screen, fmt.Sprintf("%c", rune('a'+screenCol)), x+s.squareSize/2-4, s.boardY+s.boardSize+5, s.squareSize*0.25, color.RGBA{150, 150, 150, 255})
 			}
 		}
 	}
 
 	// ==========================================
-	// 4. RENDER EXPANDED BOTTOM ROW (BENCH INVENTORY)
+	// 				Bench Renderer
 	// ==========================================
-	benchY := s.boardY + s.boardSize + 15
+
+	benchY := s.boardY + s.boardSize + 10
 	ebitenutil.DrawRect(screen, 0, benchY, winW, benchTrayH, bColor(40, 40, 45))
 
 	benchTextH := benchTrayH * 0.12
-	s.DrawScaledText(screen, fmt.Sprintf("BENCH INVENTORY (%d items):", len(s.profile.BoardAndBench.Bench)), 20, benchY+10, benchTextH, color.White)
+	s.DrawScaledText(screen, fmt.Sprintf("BENCH INVENTORY (%d items):", len(bb.Bench)), 20, benchY+5, benchTextH, color.White)
 
 	slotPadding := 8.0
 	slotSize := benchTrayH - 45
 	startX := 20.0
-	currentY := benchY + 35
+	currentY := benchY + 30
 
-	for idx, piece := range s.profile.BoardAndBench.Bench {
+	for idx, piece := range bb.Bench {
 		slotX := startX + float64(idx)*(slotSize+slotPadding)
-
 		if slotX+slotSize > winW-20 {
 			slotX = startX + float64(idx%6)*(slotSize+slotPadding)
-			currentY = benchY + 35 + slotSize + slotPadding
+			currentY = benchY + 30 + slotSize + slotPadding
 		}
 
 		isThisBenchSelected := s.isBenchSelected && s.selectedBenchIndex == idx
@@ -360,31 +417,58 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 			ebitenutil.DrawRect(screen, slotX-borderGlow, currentY-borderGlow, slotSize+(borderGlow*2), slotSize+(borderGlow*2), color.RGBA{0, 255, 230, 255})
 		}
 
-		sprite := GetPieceSprite(piece)
-		if sprite != nil {
-			op := &ebiten.DrawImageOptions{}
+		if sprite := GetPreScaledSprite(piece); sprite != nil {
+			s.dragDrawOp.GeoM.Reset()
+			s.dragDrawOp.ColorScale.Reset()
 
-			targetSpriteH := slotSize * .75
-			scaleX := targetSpriteH / float64(SpriteW)
-			scaleY := targetSpriteH / float64(SpriteH)
+			scaleFactor := slotSize / s.squareSize
+			targetSpriteSize := slotSize * 0.75
 
-			scaledPieceW := float64(SpriteW) * scaleX
-			scaledPieceH := float64(SpriteH) * scaleY
+			paddingX := (slotSize - targetSpriteSize) / 2.0
+			paddingY := (slotSize - targetSpriteSize) / 2.0
 
-			paddingX := (slotSize - scaledPieceW) / 2.0
-			paddingY := (slotSize - scaledPieceH) / 3.0
+			s.dragDrawOp.GeoM.Scale(scaleFactor*0.75, scaleFactor*0.75)
+			s.dragDrawOp.GeoM.Translate(slotX+paddingX, currentY+paddingY)
 
-			op.GeoM.Scale(scaleX, scaleY)
-			op.GeoM.Translate(slotX+paddingX, currentY+paddingY)
-
-			screen.DrawImage(sprite, op)
+			screen.DrawImage(sprite, s.dragDrawOp)
 		}
 	}
 
-	// 5. Status Footer Layout
-	footerTextH := winH * .022
+	// ==========================================
+	// 			Floating Drag Renderer
+	// ==========================================
+	footerTextH := winH * 0.022
 	footerY := winH - footerTextH - 10
+	ebitenutil.DrawRect(screen, 0, footerY-5, winW, winH-footerY+5, bColor(25, 25, 30))
 	s.DrawScaledText(screen, fmt.Sprintf("System Log: %s", s.statusMessage), 20, footerY, footerTextH, color.RGBA{180, 180, 180, 255})
+
+	if s.isDragging {
+
+		mx, my := ebiten.CursorPosition()
+
+		var floatingPiece *game.Piece
+		if s.dragSource == DragFromBench && s.draggedBenchIdx < len(bb.Bench) {
+			floatingPiece = &bb.Bench[s.draggedBenchIdx]
+		} else if s.dragSource == DragFromBoard {
+			if piece, exists := (*bb.Board)[s.draggedBoardSquare]; exists {
+				floatingPiece = &piece
+			}
+		}
+
+		if floatingPiece != nil {
+			if sprite := GetPreScaledSprite(*floatingPiece); sprite != nil {
+				s.dragDrawOp.GeoM.Reset()
+				s.dragDrawOp.ColorScale.Reset()
+
+				// Draw the pre-scaled texture skin instantly matching cursor coordinates
+				halfDim := s.squareSize / 2.0
+				s.dragDrawOp.GeoM.Translate(float64(mx)-halfDim, float64(my)-halfDim)
+				s.dragDrawOp.ColorScale.Scale(1, 1, 1, 0.80)
+
+				screen.DrawImage(sprite, s.dragDrawOp)
+			}
+		}
+	}
 }
 
 func (s *ShopScene) getUnitItemRect(itemID string) imageRect {
@@ -402,6 +486,23 @@ func (s *ShopScene) getUnitItemRect(itemID string) imageRect {
 }
 
 func (s *ShopScene) Layout(outsideWidth, outsideHeight int) (int, int) {
+	if outsideWidth != s.lastLayoutW || outsideHeight != s.lastLayoutH {
+		s.lastLayoutW = outsideWidth
+		s.lastLayoutH = outsideHeight
+
+		winW := float64(outsideWidth)
+		winH := float64(outsideHeight)
+		shopTrayH := winH * 0.18
+		benchTrayH := winH * 0.18
+		usableBoardH := winH - shopTrayH - benchTrayH - 60
+
+		sqSize := usableBoardH / 8
+		if (winW-100)/8 < sqSize {
+			sqSize = (winW - 100) / 8
+		}
+
+		RegenerateScaledUICache(sqSize)
+	}
 	return outsideWidth, outsideHeight
 }
 

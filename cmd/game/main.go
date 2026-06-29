@@ -75,8 +75,12 @@ func (m *MainGameApp) Layout(outsideWidth, outsideHeigh int) (int, int) {
 
 func main() {
 	scene.LoadAssets("assets/images/GenericChessPiecesSprite.png")
-	profile := game.NewDefaultProfile("white", true)
+	profile := game.NewDefaultProfile("player", true)
 	manager := draft.NewDraftManager(10)
+
+	//Lets change the player to be playing black
+	profile.SwitchColorIfDifferent(game.Black)
+
 	shop := scene.NewShopScene(profile, manager)
 	defer shop.Destroy()
 	app := &MainGameApp{currentScene: shop}
