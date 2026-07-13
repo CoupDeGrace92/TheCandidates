@@ -43,6 +43,9 @@ type ShopScene struct {
 	//Temp reroll button with collision boundaries
 	rerollBtn imageRect
 
+	//Lock in action button
+	readyBtn imageRect
+
 	//Input Tracking
 	selectedBenchIndex  int           //set to -1 if no bench piece is selected
 	selectedBoardSquare game.Location //set to (0,0) if no board tile is selected
@@ -116,6 +119,13 @@ func (s *ShopScene) Update() error {
 			s.clearSelection()
 			return nil
 		}
+
+		if s.readyBtn.Contains(mx, my) {
+			s.clearSelection()
+			s.statusMessage = "PLAYER READY"
+			return nil
+		}
+
 		for _, card := range s.tray.Units {
 			if s.getUnitItemRect(card.ID).Contains(mx, my) {
 				_ = s.manager.BuyItem(&s.tray, card.ID, s.profile)
@@ -191,10 +201,24 @@ func (s *ShopScene) Update() error {
 		if s.isDragging {
 			s.isDragging = false
 			if s.dragSource == DragFromBench && hoveredSquare.File != 0 {
-				_ = bb.BenchToBoard(s.draggedBenchIdx, hoveredSquare)
+				targetPiece := bb.Bench[s.draggedBenchIdx]
+
+				// DEFENSIVE COUPLING PROTECTION FOR DRAG PLACEMENTS:
+				if targetPiece.Type == game.Pawn && (hoveredSquare.Rank == 1 || hoveredSquare.Rank == 8) {
+					s.statusMessage = "Placement Denied: Pawns cannot be dragged onto the back row!"
+				} else {
+					_ = bb.BenchToBoard(s.draggedBenchIdx, hoveredSquare)
+				}
 			} else if s.dragSource == DragFromBoard {
 				if hoveredSquare.File != 0 && hoveredSquare != s.draggedBoardSquare {
-					_ = bb.BoardToBoard(s.draggedBoardSquare, hoveredSquare)
+					targetPiece, exists := (*bb.Board)[s.draggedBoardSquare]
+
+					// DEFENSIVE COUPLING PROTECTION FOR DRAG SHUFFLES:
+					if exists && targetPiece.Type == game.Pawn && (hoveredSquare.Rank == 1 || hoveredSquare.Rank == 8) {
+						s.statusMessage = "Movement Denied: Pawns cannot be dragged onto the back row!"
+					} else {
+						_ = bb.BoardToBoard(s.draggedBoardSquare, hoveredSquare)
+					}
 				} else if float64(my) >= s.boardY+s.boardSize+15 {
 					_ = bb.BoardToBench(s.draggedBoardSquare)
 				}
@@ -207,21 +231,20 @@ func (s *ShopScene) Update() error {
 		// 2. HYBRID RE-ROUTING VALVE FOR TRUE CLICK-TO-CLICK MOVEMENTS
 		if s.dragSource != DragFromNone {
 			if s.dragSource == DragFromBench {
-				// If a board square was already clicked, this overrides it
 				s.clearSelection()
 				s.selectedBenchIndex = s.draggedBenchIdx
 				s.isBenchSelected = true
 				s.statusMessage = "Bench unit selected via click. Tap an unlocked board square to deploy."
 			} else if s.dragSource == DragFromBoard {
-				// Check if another element was already selected and we tapped this destination piece square
 				if s.isBenchSelected {
-					_ = bb.BenchToBoard(s.selectedBenchIndex, s.draggedBoardSquare)
-					s.clearSelection()
+					// Route down to empty square logic below manually if target matches
+					if hoveredSquare == s.draggedBoardSquare {
+						s.dragSource = DragFromNone
+					}
 				} else if s.isBoardSelected && s.selectedBoardSquare != s.draggedBoardSquare {
 					_ = bb.BoardToBoard(s.selectedBoardSquare, s.draggedBoardSquare)
 					s.clearSelection()
 				} else {
-					// Fallback: Initial click selection source capture step
 					s.clearSelection()
 					s.selectedBoardSquare = s.draggedBoardSquare
 					s.isBoardSelected = true
@@ -233,22 +256,48 @@ func (s *ShopScene) Update() error {
 		}
 
 		// 3. TARGET EMPTY SQUARE DESTINATION CLICK RESOLUTION:
-		if hoveredSquare.File != 0 && (s.isBenchSelected || s.isBoardSelected) {
+		// FIXED WRAPPER CORRECTION: Enforce strict hoveredSquare bounds checking
+		if hoveredSquare.File != 0 {
 			if s.isBenchSelected {
-				_ = bb.BenchToBoard(s.selectedBenchIndex, hoveredSquare)
-			} else if s.isBoardSelected {
-				_ = bb.BoardToBoard(s.selectedBoardSquare, hoveredSquare)
+				targetPiece := bb.Bench[s.selectedBenchIndex]
+
+				if targetPiece.Type == game.Pawn && (hoveredSquare.Rank == 1 || hoveredSquare.Rank == 8) {
+					s.statusMessage = "Placement Denied: Pawns cannot be deployed on the back row!"
+					s.clearSelection()
+					return nil
+				}
+
+				if bb.BenchToBoard(s.selectedBenchIndex, hoveredSquare) {
+					s.statusMessage = "Unit deployed successfully onto the board grid."
+				} else {
+					s.statusMessage = "Placement Failed: Square is locked or occupied."
+				}
+				s.clearSelection()
+				return nil
 			}
-			s.dragSource = DragFromNone
-			s.clearSelection()
-			return nil
+
+			if s.isBoardSelected {
+				targetPiece, exists := (*bb.Board)[s.selectedBoardSquare]
+				if exists && targetPiece.Type == game.Pawn && (hoveredSquare.Rank == 1 || hoveredSquare.Rank == 8) {
+					s.statusMessage = "Movement Denied: Pawns cannot be shifted onto the back row!"
+					s.clearSelection()
+					return nil
+				}
+
+				if bb.BoardToBoard(s.selectedBoardSquare, hoveredSquare) {
+					s.statusMessage = "Unit re-positioned on the frontline grid."
+				} else {
+					s.statusMessage = "Movement Failed: Target square is invalid."
+				}
+				s.clearSelection()
+				return nil
+			}
 		}
 
 		// Tapped neutral background layout zone: complete pipeline flush
 		s.dragSource = DragFromNone
 		s.clearSelection()
 	}
-
 	return nil
 }
 
@@ -326,16 +375,32 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 		priceTextY := r.y + r.h - (r.h * 0.22)
 		s.DrawScaledText(screen, priceTagStr, r.x+15, priceTextY, r.h*0.14, color.White)
 	}
-	btnW := s.squareSize * 2.2
-	btnH := s.squareSize * 0.7
-	btnY := (shopTrayH / 2.0) - (btnH / 2.0)
 
 	//reroll := fmt.Sprintf("REROLL(%vG)", ) - we want global tuning variables - this will just hook the pipeline up
 
-	s.rerollBtn = imageRect{x: winW - btnW - 20, y: btnY, w: btnW, h: btnH}
-	ebitenutil.DrawRect(screen, s.rerollBtn.x, s.rerollBtn.y, s.rerollBtn.w, s.rerollBtn.h, bColor(140, 110, 40))
-	s.DrawScaledText(screen, "REROLL (1G)", s.rerollBtn.x+(btnW*0.1), s.rerollBtn.y+btnH/2-6, btnH*0.3, color.White)
+	btnW := s.squareSize * 2.2
+	btnH := s.squareSize * 0.60
+	marginRight := 20.0
 
+	// 1. Position the green Ready button directly near the top-right ceiling corner
+	s.readyBtn = imageRect{
+		x: winW - btnW - marginRight,
+		y: 8,
+		w: btnW,
+		h: btnH,
+	}
+	ebitenutil.DrawRect(screen, s.readyBtn.x, s.readyBtn.y, s.readyBtn.w, s.readyBtn.h, bColor(40, 140, 60))
+	s.DrawScaledText(screen, "READY", s.readyBtn.x+(btnW*0.28), s.readyBtn.y+btnH/2-5, btnH*0.4, color.White)
+
+	// 2. Position the gold Reroll button directly underneath the green Ready button slot
+	s.rerollBtn = imageRect{
+		x: winW - btnW - marginRight,
+		y: s.readyBtn.y + s.readyBtn.h + 6, // Anchored 6 pixels below the lower edge bounding line
+		w: btnW,
+		h: btnH,
+	}
+	ebitenutil.DrawRect(screen, s.rerollBtn.x, s.rerollBtn.y, s.rerollBtn.w, s.rerollBtn.h, bColor(140, 110, 40))
+	s.DrawScaledText(screen, "REROLL (1G)", s.rerollBtn.x+(btnW*0.12), s.rerollBtn.y+btnH/2-5, btnH*0.4, color.White)
 	// ==========================================
 	// 				Board Renderer
 	// ==========================================
