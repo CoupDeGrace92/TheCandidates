@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -65,6 +66,8 @@ func NewPlayerPieces() *PlayerPieces {
 }
 
 type MatchState struct {
+	Board BoardState `json:"board"`
+
 	WhitePlayer     *PlayerProfile `json:"white_player"`
 	BlackPlayer     *PlayerProfile `json:"black_player"`
 	ActiveColor     PieceColor     `json:"active_color"`
@@ -116,16 +119,16 @@ func (m *MatchState) ToFEN() string {
 		return ""
 	}
 
-	combinedBoard := ConcatenateBoardState(m.WhitePlayer.BoardAndBench.Board, m.BlackPlayer.BoardAndBench.Board)
 	var rows []string
-	//FEN reads top rank (Rank = 8) down to bottom rank (Rank = 0)
+	// FEN strings serialize the grid starting from Top Rank (8) down to Bottom Rank (1)
 	for rank := 8; rank >= 1; rank-- {
 		var rankStringBuilder strings.Builder
 		emptyCount := 0
 
 		for file := 1; file <= 8; file++ {
 			loc := Location{Rank: rank, File: file}
-			if piece, occupied := (*combinedBoard)[loc]; occupied {
+
+			if piece, occupied := m.Board[loc]; occupied {
 				if emptyCount > 0 {
 					rankStringBuilder.WriteString(strconv.Itoa(emptyCount))
 					emptyCount = 0
@@ -144,7 +147,6 @@ func (m *MatchState) ToFEN() string {
 
 	fenBoard := strings.Join(rows, "/")
 
-	castling := m.CastlingRights
 	ep := m.EnPassantTarget
 	if ep == "" {
 		ep = "-"
@@ -157,7 +159,7 @@ func (m *MatchState) ToFEN() string {
 	return fmt.Sprintf("%s %s %s %s %d %d",
 		fenBoard,
 		activeColorChar,
-		castling,
+		m.CastlingRights,
 		ep,
 		m.HalfMoveClock,
 		m.FullMoveNumber,
@@ -167,20 +169,20 @@ func (m *MatchState) ToFEN() string {
 func (m *MatchState) InitializeCastlingRights() {
 	rights := ""
 
-	if wk, ok := (*m.WhitePlayer.BoardAndBench.Board)[Location{Rank: 1, File: 5}]; ok && wk.Type == King {
-		if r, ok := (*m.WhitePlayer.BoardAndBench.Board)[Location{Rank: 1, File: 8}]; ok && r.Type == Rook {
+	if wk, ok := m.Board[Location{Rank: 1, File: 5}]; ok && wk.Type == King && wk.Color == White {
+		if r, ok := m.Board[Location{Rank: 1, File: 8}]; ok && r.Type == Rook && r.Color == White {
 			rights += "K"
 		}
-		if r, ok := (*m.WhitePlayer.BoardAndBench.Board)[Location{Rank: 1, File: 1}]; ok && r.Type == Rook {
+		if r, ok := m.Board[Location{Rank: 1, File: 1}]; ok && r.Type == Rook && r.Color == White {
 			rights += "Q"
 		}
 	}
 
-	if bk, ok := (*m.BlackPlayer.BoardAndBench.Board)[Location{Rank: 8, File: 5}]; ok && bk.Type == King {
-		if r, ok := (*m.BlackPlayer.BoardAndBench.Board)[Location{Rank: 8, File: 8}]; ok && r.Type == Rook {
+	if bk, ok := m.Board[Location{Rank: 8, File: 5}]; ok && bk.Type == King && bk.Color == Black {
+		if r, ok := m.Board[Location{Rank: 8, File: 8}]; ok && r.Type == Rook && r.Color == Black {
 			rights += "k"
 		}
-		if r, ok := (*m.BlackPlayer.BoardAndBench.Board)[Location{Rank: 8, File: 1}]; ok && r.Type == Rook {
+		if r, ok := m.Board[Location{Rank: 8, File: 1}]; ok && r.Type == Rook && r.Color == Black {
 			rights += "q"
 		}
 	}
@@ -197,79 +199,48 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 		return fmt.Errorf("invalid UCI move string length: %s", moveStr)
 	}
 
-	fromFile := int(moveStr[0] - 'a' + 1)
-	fromRank := int(moveStr[1] - '0')
-	toFile := int(moveStr[2] - 'a' + 1)
-	toRank := int(moveStr[3] - '0')
-
-	fromLoc := Location{
-		File: fromFile,
-		Rank: fromRank,
-	}
-
-	toLoc := Location{
-		File: toFile,
-		Rank: toRank,
-	}
+	fromLoc := Location{File: int(moveStr[0] - 'a' + 1), Rank: int(moveStr[1] - '0')}
+	toLoc := Location{File: int(moveStr[2] - 'a' + 1), Rank: int(moveStr[3] - '0')}
 
 	if !fromLoc.IsValid() || !toLoc.IsValid() {
 		return fmt.Errorf("parsed out-of-bounds locations from move: %s", moveStr)
 	}
 
-	var activeBoard *BoardState
-	var opponentBoard *BoardState
-
-	if m.ActiveColor == White {
-		activeBoard = m.WhitePlayer.BoardAndBench.Board
-		opponentBoard = m.BlackPlayer.BoardAndBench.Board
-	} else {
-		activeBoard = m.BlackPlayer.BoardAndBench.Board
-		opponentBoard = m.WhitePlayer.BoardAndBench.Board
-	}
-
-	movingPiece, exists := (*activeBoard)[fromLoc]
+	movingPiece, exists := m.Board[fromLoc]
 	if !exists {
 		return fmt.Errorf("no piece found at source location %s", moveStr)
 	}
 
-	//EP Logic
+	// 1. En Passant Capture Logic
 	if movingPiece.Type == Pawn && toLoc.File != fromLoc.File {
-		_, targetOccupied := (*opponentBoard)[toLoc]
-		if !targetOccupied {
-			enemyPawnRank := fromLoc.Rank
-			enemyPawnLoc := Location{
-				File: toLoc.File,
-				Rank: enemyPawnRank,
-			}
-			delete(*opponentBoard, enemyPawnLoc)
+		if _, targetOccupied := m.Board[toLoc]; !targetOccupied {
+			// Capturing a pawn via En Passant removes it from the rank behind the target square
+			delete(m.Board, Location{File: toLoc.File, Rank: fromLoc.Rank})
 			m.HalfMoveClock = 0
 		}
 	}
 
-	//capture - this logic needs to come after the ep logic
-	_, exists = (*opponentBoard)[toLoc]
-	if exists {
+	// 2. Standard Capture Logic
+	if _, targetOccupied := m.Board[toLoc]; targetOccupied {
 		m.HalfMoveClock = 0
-		delete(*opponentBoard, toLoc)
+		delete(m.Board, toLoc)
 	}
 
-	//Castling Logic
-	if movingPiece.Type == King && abs(toLoc.File-fromLoc.File) == 2 {
-		if toLoc.File == 7 {
-			delete(*activeBoard, Location{File: 8, Rank: toLoc.Rank})
-			(*activeBoard)[Location{File: 6, Rank: toLoc.Rank}] = Piece{Type: Rook, Color: m.ActiveColor}
-		}
-		if toLoc.File == 3 {
-			delete(*activeBoard, Location{File: 1, Rank: toLoc.Rank})
-			(*activeBoard)[Location{File: 6, Rank: toLoc.Rank}] = Piece{Type: Rook, Color: m.ActiveColor}
+	// 3. Castling Secondary Rook Shifting Logic
+	if movingPiece.Type == King && int(math.Abs(float64(toLoc.File-fromLoc.File))) == 2 {
+		if toLoc.File == 7 { // Kingside
+			delete(m.Board, Location{File: 8, Rank: toLoc.Rank})
+			m.Board[Location{File: 6, Rank: toLoc.Rank}] = Piece{Type: Rook, Color: m.ActiveColor}
+		} else if toLoc.File == 3 { // Queenside
+			delete(m.Board, Location{File: 1, Rank: toLoc.Rank})
+			m.Board[Location{File: 4, Rank: toLoc.Rank}] = Piece{Type: Rook, Color: m.ActiveColor}
 		}
 	}
 
-	//Promotion Logic
+	// 4. Pawn Promotion Logic
 	if movingPiece.Type == Pawn && (toLoc.Rank == 8 || toLoc.Rank == 1) {
 		if len(moveStr) == 5 {
-			promoChar := moveStr[4]
-			switch promoChar {
+			switch moveStr[4] {
 			case 'n':
 				movingPiece.Type = Knight
 			case 'b':
@@ -280,16 +251,18 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 				movingPiece.Type = Queen
 			}
 		} else {
-			return fmt.Errorf("No promotion piece specified: %s", moveStr)
+			return fmt.Errorf("no promotion piece specified: %s", moveStr)
 		}
 	}
 
-	//Update state flags - this might have to come at the very start
+	// Update system clocks and En Passant flags
 	m.updateFlagsAndClocks(movingPiece, fromLoc, toLoc)
 
-	//Complete the move
-	delete(*activeBoard, fromLoc)
-	(*activeBoard)[toLoc] = movingPiece
+	// 5. Complete the Move State Mutation
+	delete(m.Board, fromLoc)
+	m.Board[toLoc] = movingPiece
+
+	// Shift active color turns and advance move numbers
 	if m.ActiveColor == White {
 		m.ActiveColor = Black
 	} else {
@@ -301,8 +274,7 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 }
 
 func (m *MatchState) updateFlagsAndClocks(piece Piece, from, to Location) {
-	combined := ConcatenateBoardState(m.WhitePlayer.BoardAndBench.Board, m.BlackPlayer.BoardAndBench.Board)
-	_, isCapture := (*combined)[to]
+	_, isCapture := m.Board[to]
 
 	if piece.Type == Pawn || isCapture {
 		m.HalfMoveClock = 0
@@ -310,8 +282,8 @@ func (m *MatchState) updateFlagsAndClocks(piece Piece, from, to Location) {
 		m.HalfMoveClock++
 	}
 
-	//Set EP target
-	if piece.Type == Pawn && abs(to.Rank-from.Rank) == 2 {
+	// Set En Passant target string for the next turn loop
+	if piece.Type == Pawn && int(math.Abs(float64(to.Rank-from.Rank))) == 2 {
 		middleRank := (from.Rank + to.Rank) / 2
 		fileChar := rune('a' + from.File - 1)
 		m.EnPassantTarget = fmt.Sprintf("%c%d", fileChar, middleRank)
@@ -319,30 +291,25 @@ func (m *MatchState) updateFlagsAndClocks(piece Piece, from, to Location) {
 		m.EnPassantTarget = "-"
 	}
 
-	//Castling Rights
+	// Re-evaluate remaining Castling Rights flags
 	if piece.Type == King {
 		if piece.Color == White {
 			m.CastlingRights = removeRights(m.CastlingRights, "KQ")
 		} else {
 			m.CastlingRights = removeRights(m.CastlingRights, "kq")
 		}
-	}
-
-	if piece.Type == Rook {
-		if piece.Color == White {
-			if from.File == 1 && from.Rank == 1 {
-				m.CastlingRights = removeRights(m.CastlingRights, "Q")
-			}
-			if from.File == 8 && from.Rank == 1 {
-				m.CastlingRights = removeRights(m.CastlingRights, "K")
-			}
-		} else {
-			if from.File == 1 && from.Rank == 8 {
-				m.CastlingRights = removeRights(m.CastlingRights, "q")
-			}
-			if from.File == 8 && from.Rank == 8 {
-				m.CastlingRights = removeRights(m.CastlingRights, "k")
-			}
+	} else if piece.Type == Rook {
+		if from.Rank == 1 && from.File == 8 {
+			m.CastlingRights = removeRights(m.CastlingRights, "K")
+		}
+		if from.Rank == 1 && from.File == 1 {
+			m.CastlingRights = removeRights(m.CastlingRights, "Q")
+		}
+		if from.Rank == 8 && from.File == 8 {
+			m.CastlingRights = removeRights(m.CastlingRights, "k")
+		}
+		if from.Rank == 8 && from.File == 1 {
+			m.CastlingRights = removeRights(m.CastlingRights, "q")
 		}
 	}
 }
@@ -355,13 +322,6 @@ func removeRights(current, toRemove string) string {
 		return "-"
 	}
 	return current
-}
-
-func abs(num int) int {
-	if num < 0 {
-		return -num
-	}
-	return num
 }
 
 type PositionTracker map[string]int
