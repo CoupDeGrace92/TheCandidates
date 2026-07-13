@@ -293,7 +293,7 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 	ebitenutil.DrawRect(screen, 0, 0, winW, shopTrayH, bColor(45, 45, 50))
 
 	headerTextH := shopTrayH * 0.15
-	s.DrawScaledText(screen, fmt.Sprintf("GOLD: %d G | SPEED: %d / 20", s.profile.Gold, s.profile.SkillLevel), 20, 10, headerTextH, color.White)
+	s.DrawScaledText(screen, fmt.Sprintf("GOLD: %d G | SKILL: %d / 20", s.profile.Gold, s.profile.SkillLevel), 20, 10, headerTextH, color.White)
 
 	for _, card := range s.tray.Units {
 		r := s.getUnitItemRect(card.ID)
@@ -488,7 +488,6 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 				s.dragDrawOp.GeoM.Reset()
 				s.dragDrawOp.ColorScale.Reset()
 
-				// Draw the pre-scaled texture skin instantly matching cursor coordinates
 				halfDim := s.squareSize / 2.0
 				s.dragDrawOp.GeoM.Translate(float64(mx)-halfDim, float64(my)-halfDim)
 				s.dragDrawOp.ColorScale.Scale(1, 1, 1, 0.80)
