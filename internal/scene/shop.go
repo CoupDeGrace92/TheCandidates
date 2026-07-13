@@ -105,6 +105,9 @@ func (s *ShopScene) Update() error {
 		}
 	}
 
+	// ==========================================
+	// PHASE A: INITIAL MOUSE DOWN INTERCEPTIONS
+	// ==========================================
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		s.startX, s.startY = mx, my // Anchor initial mouse click coordinates
 
@@ -166,6 +169,9 @@ func (s *ShopScene) Update() error {
 		}
 	}
 
+	// ==========================================
+	// PHASE B: REAL-TIME DRAG THRESHOLD EVALUATION
+	// ==========================================
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && s.dragSource != DragFromNone && !s.isDragging {
 		dx := mx - s.startX
 		dy := my - s.startY
@@ -177,7 +183,11 @@ func (s *ShopScene) Update() error {
 		}
 	}
 
+	// ==========================================
+	// PHASE C: MOUSE RELEASE HANDLING PARADIGM
+	// ==========================================
 	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
+		// 1. ANCHOR DRAG AND DROP RESOLUTION TERMINATION
 		if s.isDragging {
 			s.isDragging = false
 			if s.dragSource == DragFromBench && hoveredSquare.File != 0 {
@@ -194,20 +204,24 @@ func (s *ShopScene) Update() error {
 			return nil
 		}
 
+		// 2. HYBRID RE-ROUTING VALVE FOR TRUE CLICK-TO-CLICK MOVEMENTS
 		if s.dragSource != DragFromNone {
 			if s.dragSource == DragFromBench {
+				// If a board square was already clicked, this overrides it
 				s.clearSelection()
 				s.selectedBenchIndex = s.draggedBenchIdx
 				s.isBenchSelected = true
 				s.statusMessage = "Bench unit selected via click. Tap an unlocked board square to deploy."
 			} else if s.dragSource == DragFromBoard {
-				if s.isBenchSelected && hoveredSquare == s.draggedBoardSquare {
-					_ = bb.BenchToBoard(s.selectedBenchIndex, hoveredSquare)
+				// Check if another element was already selected and we tapped this destination piece square
+				if s.isBenchSelected {
+					_ = bb.BenchToBoard(s.selectedBenchIndex, s.draggedBoardSquare)
 					s.clearSelection()
 				} else if s.isBoardSelected && s.selectedBoardSquare != s.draggedBoardSquare {
 					_ = bb.BoardToBoard(s.selectedBoardSquare, s.draggedBoardSquare)
 					s.clearSelection()
 				} else {
+					// Fallback: Initial click selection source capture step
 					s.clearSelection()
 					s.selectedBoardSquare = s.draggedBoardSquare
 					s.isBoardSelected = true
@@ -218,14 +232,19 @@ func (s *ShopScene) Update() error {
 			return nil
 		}
 
-		//If clicked on non-piece/non-square, reset clicks
+		// 3. TARGET EMPTY SQUARE DESTINATION CLICK RESOLUTION:
 		if hoveredSquare.File != 0 && (s.isBenchSelected || s.isBoardSelected) {
 			if s.isBenchSelected {
 				_ = bb.BenchToBoard(s.selectedBenchIndex, hoveredSquare)
 			} else if s.isBoardSelected {
 				_ = bb.BoardToBoard(s.selectedBoardSquare, hoveredSquare)
 			}
+			s.dragSource = DragFromNone
+			s.clearSelection()
+			return nil
 		}
+
+		// Tapped neutral background layout zone: complete pipeline flush
 		s.dragSource = DragFromNone
 		s.clearSelection()
 	}
@@ -307,6 +326,15 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 		priceTextY := r.y + r.h - (r.h * 0.22)
 		s.DrawScaledText(screen, priceTagStr, r.x+15, priceTextY, r.h*0.14, color.White)
 	}
+	btnW := s.squareSize * 2.2
+	btnH := s.squareSize * 0.7
+	btnY := (shopTrayH / 2.0) - (btnH / 2.0)
+
+	//reroll := fmt.Sprintf("REROLL(%vG)", ) - we want global tuning variables - this will just hook the pipeline up
+
+	s.rerollBtn = imageRect{x: winW - btnW - 20, y: btnY, w: btnW, h: btnH}
+	ebitenutil.DrawRect(screen, s.rerollBtn.x, s.rerollBtn.y, s.rerollBtn.w, s.rerollBtn.h, bColor(140, 110, 40))
+	s.DrawScaledText(screen, "REROLL (1G)", s.rerollBtn.x+(btnW*0.1), s.rerollBtn.y+btnH/2-6, btnH*0.3, color.White)
 
 	// ==========================================
 	// 				Board Renderer
