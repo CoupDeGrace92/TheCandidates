@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type PieceType string
@@ -410,4 +411,68 @@ func (l Location) Transform() Location {
 		File: 9 - l.File,
 		Rank: 9 - l.Rank,
 	}
+}
+
+func ParseFENForColor(fen string, targetColor PieceColor) BoardState {
+	board := make(BoardState)
+	if fen == "" {
+		return board
+	}
+
+	parts := strings.Split(fen, " ")
+	boardPart := parts[0]
+	ranks := strings.Split(boardPart, "/")
+	for fenRankIdx, rankStr := range ranks {
+		absoluteRank := 8 - fenRankIdx
+		file := 1
+
+		for _, char := range rankStr {
+			if unicode.IsDigit(char) {
+				file += int(char - '0')
+			} else {
+				pieceColor := White
+				if unicode.IsLower(char) {
+					pieceColor = Black
+				}
+
+				if pieceColor == targetColor {
+					var pType PieceType
+					switch unicode.ToLower(char) {
+					case 'p':
+						pType = Pawn
+					case 'n':
+						pType = Knight
+					case 'b':
+						pType = Bishop
+					case 'r':
+						pType = Rook
+					case 'q':
+						pType = Queen
+					case 'k':
+						pType = King
+					}
+
+					absoluteLoc := Location{File: file, Rank: absoluteRank}
+
+					// If we are extracting Black's side, their pieces naturally live on Ranks 7-8 globally.
+					// We must flip their coordinates down via Transform() so they sit on Ranks 1-2 internally,
+					// matching how local draft profiles store data.
+					var localizedLoc Location
+					if targetColor == Black {
+						localizedLoc = absoluteLoc.Transform()
+					} else {
+						localizedLoc = absoluteLoc
+					}
+
+					board[localizedLoc] = Piece{
+						Type:  pType,
+						Color: targetColor,
+					}
+				}
+				file++
+			}
+		}
+	}
+
+	return board
 }

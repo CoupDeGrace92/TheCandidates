@@ -8,10 +8,11 @@ type BoardTheme struct {
 }
 
 type PlayerProfile struct {
-	PlayerID string     `json:"player_id"`
-	IsHuman  bool       `json:"is_human"`
-	Gold     int        `json:"gold"`
-	Color    PieceColor `json:"color"`
+	PlayerID     string     `json:"player_id"`
+	IsHuman      bool       `json:"is_human"`
+	Gold         int        `json:"gold"`
+	BotTotalGold int        `json:"bot_total_gold"`
+	Color        PieceColor `json:"color"`
 
 	SkillLevel      int `json:"skill_level"`
 	MoveTimeMs      int `json:"move_time_ms"`
