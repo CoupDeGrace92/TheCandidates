@@ -25,6 +25,7 @@ const (
 type ShopScene struct {
 	profile       *game.PlayerProfile
 	manager       *draft.DraftManager
+	director      *Director
 	tray          draft.ShopTray
 	statusMessage string
 	gameOver      bool
@@ -74,12 +75,13 @@ func (r imageRect) Contains(x, y int) bool {
 	return fx >= r.x && fx <= r.x+r.w && fy >= r.y && fy <= r.y+r.h
 }
 
-func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *ShopScene {
+func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager, director *Director) *ShopScene {
 	startingTray := manager.GenerateFreshTray(profile.BoardAndBench.Squares, profile.Color)
 
 	return &ShopScene{
 		profile:       profile,
 		manager:       manager,
+		director:      director,
 		tray:          startingTray,
 		statusMessage: "Welcome to the Draft Phase! Select items to purchase.",
 		rerollBtn:     imageRect{x: 480, y: 560, w: 120, h: 40},
@@ -90,19 +92,16 @@ func NewShopScene(profile *game.PlayerProfile, manager *draft.DraftManager) *Sho
 func (s *ShopScene) Update() error {
 	mx, my := ebiten.CursorPosition()
 	bb := s.profile.BoardAndBench
-	playerColor := s.profile.Color
 
-	// Helper to find absolute map grid tile coordinates under the current cursor position
 	hoveredSquare := game.Location{File: 0, Rank: 0}
 	for screenRow := 0; screenRow < 8; screenRow++ {
 		for screenCol := 0; screenCol < 8; screenCol++ {
 			x := s.boardX + float64(screenCol)*s.squareSize
 			y := s.boardY + float64(screenRow)*s.squareSize
 			if float64(mx) >= x && float64(mx) < x+s.squareSize && float64(my) >= y && float64(my) < y+s.squareSize {
-				if playerColor == game.Black {
-					hoveredSquare = game.Location{File: screenCol + 1, Rank: screenRow + 1}
-				} else {
-					hoveredSquare = game.Location{File: screenCol + 1, Rank: 8 - screenRow}
+				hoveredSquare = game.Location{
+					File: screenCol + 1,
+					Rank: 8 - screenRow,
 				}
 			}
 		}
@@ -112,20 +111,19 @@ func (s *ShopScene) Update() error {
 	// PHASE A: INITIAL MOUSE DOWN INTERCEPTIONS
 	// ==========================================
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		s.startX, s.startY = mx, my // Anchor initial mouse click coordinates
+		s.startX, s.startY = mx, my
 
 		if s.rerollBtn.Contains(mx, my) {
 			_ = s.manager.ProcessReroll(&s.tray, s.profile)
 			s.clearSelection()
 			return nil
 		}
-
 		if s.readyBtn.Contains(mx, my) {
 			s.clearSelection()
 			s.statusMessage = "PLAYER READY"
+			s.director.CompleteDraftAndEnterBattle()
 			return nil
 		}
-
 		for _, card := range s.tray.Units {
 			if s.getUnitItemRect(card.ID).Contains(mx, my) {
 				_ = s.manager.BuyItem(&s.tray, card.ID, s.profile)
@@ -144,7 +142,6 @@ func (s *ShopScene) Update() error {
 				}
 				s.lastClickTime = time.Now()
 				s.lastClickSquare = hoveredSquare
-
 				s.dragSource = DragFromBoard
 				s.draggedBoardSquare = hoveredSquare
 				return nil
@@ -404,21 +401,19 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 	// ==========================================
 	// 				Board Renderer
 	// ==========================================
-
 	for screenRow := 0; screenRow < 8; screenRow++ {
 		for screenCol := 0; screenCol < 8; screenCol++ {
 			x := s.boardX + float64(screenCol)*s.squareSize
 			y := s.boardY + float64(screenRow)*s.squareSize
 
-			var absoluteLoc game.Location
-			if playerColor == game.Black {
-				absoluteLoc = game.Location{File: screenCol + 1, Rank: screenRow + 1}
-			} else {
-				absoluteLoc = game.Location{File: screenCol + 1, Rank: 8 - screenRow}
+			absoluteLoc := game.Location{
+				File: screenCol + 1,
+				Rank: 8 - screenRow,
 			}
 
 			_, isOwned := bb.Squares[absoluteLoc]
 
+			// Locate active shop square expansion offers matching this tile coordinate
 			var matchingOffer *draft.ShopItem
 			for i, card := range s.tray.Squares {
 				if card.UnlockSquare == absoluteLoc {
@@ -427,6 +422,7 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 				}
 			}
 
+			// Establish baseline checkerboard tile colors matching your custom theme profiles
 			var tileColor color.RGBA
 			if (screenRow+screenCol)%2 == 0 {
 				tileColor = s.profile.Theme.LightSquare
@@ -434,47 +430,46 @@ func (s *ShopScene) Draw(screen *ebiten.Image) {
 				tileColor = s.profile.Theme.DarkSquare
 			}
 
+			// Apply an atmospheric dimming opacity filter if the tile is unowned territory
 			if !isOwned {
 				tileColor.R = uint8(float64(tileColor.R) * 0.35)
 				tileColor.G = uint8(float64(tileColor.G) * 0.35)
 				tileColor.B = uint8(float64(tileColor.B) * 0.35)
 			}
 
+			// Overlay a selection backing plate color behind active clicks
 			if s.isBoardSelected && s.selectedBoardSquare == absoluteLoc {
 				tileColor = color.RGBA{240, 200, 50, 120}
 			}
 
+			// Paint the physical grid tile square
 			ebitenutil.DrawRect(screen, x, y, s.squareSize-1, s.squareSize-1, tileColor)
 
+			// Render gold borders and price tags over active purchase territory boxes
 			if matchingOffer != nil {
 				ebitenutil.DrawRect(screen, x, y, s.squareSize-1, 3, color.RGBA{210, 160, 50, 255})
 				ebitenutil.DrawRect(screen, x, y, 3, s.squareSize-1, color.RGBA{210, 160, 50, 255})
 
 				visualFileChar := rune('a' + screenCol)
 				visualRankNum := 8 - screenRow
-				if playerColor == game.Black {
-					visualRankNum = screenRow + 1
-				}
+
 				priceTag := fmt.Sprintf("%c%d\n$%d", visualFileChar, visualRankNum, matchingOffer.Cost)
 				s.DrawScaledText(screen, priceTag, x+s.squareSize/2-14, y+s.squareSize/2-10, s.squareSize*0.22, color.RGBA{210, 160, 50, 255})
 			}
 
+			// Draw piece sprites directly from the local white-relative coordinates map array
 			if piece, occupied := (*bb.Board)[absoluteLoc]; occupied {
 				if sprite := GetPreScaledSprite(piece); sprite != nil {
 					s.dragDrawOp.GeoM.Reset()
 					s.dragDrawOp.ColorScale.Reset()
-
 					s.dragDrawOp.GeoM.Translate(x, y)
 					screen.DrawImage(sprite, s.dragDrawOp)
 				}
 			}
 
+			// Axis background margin text labeling - always standard a1-h8 grid system
 			if screenCol == 0 {
-				displayRank := 8 - screenRow
-				if playerColor == game.Black {
-					displayRank = screenRow + 1
-				}
-				s.DrawScaledText(screen, fmt.Sprintf("%d", displayRank), s.boardX-20, y+s.squareSize/2-6, s.squareSize*0.25, color.RGBA{150, 150, 150, 255})
+				s.DrawScaledText(screen, fmt.Sprintf("%d", 8-screenRow), s.boardX-20, y+s.squareSize/2-6, s.squareSize*0.25, color.RGBA{150, 150, 150, 255})
 			}
 			if screenRow == 7 {
 				s.DrawScaledText(screen, fmt.Sprintf("%c", rune('a'+screenCol)), x+s.squareSize/2-4, s.boardY+s.boardSize+5, s.squareSize*0.25, color.RGBA{150, 150, 150, 255})

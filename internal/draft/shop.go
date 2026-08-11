@@ -245,7 +245,7 @@ func GetEligibleSquares(allowedSquares map[game.Location]struct{}, playerColor g
 	dx := []int{-1, 0, 1, -1, 1, -1, 0, 1}
 	dy := []int{-1, -1, -1, 0, 0, 1, 1, 1}
 
-	// 1. All squares on Rank 3 are automatically available for selection at start
+	// All squares on Rank 3 are automatically available for selection at start
 	for file := 1; file <= 8; file++ {
 		loc := game.Location{File: file, Rank: targetFirstLineRank}
 		if _, owned := allowedSquares[loc]; !owned {

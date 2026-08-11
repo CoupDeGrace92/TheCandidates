@@ -2,7 +2,6 @@ package game
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -200,13 +199,21 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 		return fmt.Errorf("invalid UCI move string length: %s", moveStr)
 	}
 
-	fromLoc := Location{File: int(moveStr[0] - 'a' + 1), Rank: int(moveStr[1] - '0')}
-	toLoc := Location{File: int(moveStr[2] - 'a' + 1), Rank: int(moveStr[3] - '0')}
+	// Parse UCI move string characters into clean 1-indexed integers
+	fromFile := int(moveStr[0] - 'a' + 1)
+	fromRank := int(moveStr[1] - '0')
+	toFile := int(moveStr[2] - 'a' + 1)
+	toRank := int(moveStr[3] - '0')
+
+	fromLoc := Location{File: fromFile, Rank: fromRank}
+	toLoc := Location{File: toFile, Rank: toRank}
 
 	if !fromLoc.IsValid() || !toLoc.IsValid() {
 		return fmt.Errorf("parsed out-of-bounds locations from move: %s", moveStr)
 	}
 
+	// FIXED: Extract the moving piece directly out of our unified Board container,
+	// dropping the broken cross-profile pointer routing completely!
 	movingPiece, exists := m.Board[fromLoc]
 	if !exists {
 		return fmt.Errorf("no piece found at source location %s", moveStr)
@@ -215,7 +222,7 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 	// 1. En Passant Capture Logic
 	if movingPiece.Type == Pawn && toLoc.File != fromLoc.File {
 		if _, targetOccupied := m.Board[toLoc]; !targetOccupied {
-			// Capturing a pawn via En Passant removes it from the rank behind the target square
+			// Capturing a pawn via En Passant removes the target pawn from the rank behind it
 			delete(m.Board, Location{File: toLoc.File, Rank: fromLoc.Rank})
 			m.HalfMoveClock = 0
 		}
@@ -224,11 +231,11 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 	// 2. Standard Capture Logic
 	if _, targetOccupied := m.Board[toLoc]; targetOccupied {
 		m.HalfMoveClock = 0
-		delete(m.Board, toLoc)
+		delete(m.Board, toLoc) // Remove the captured piece from the unified combat grid
 	}
 
 	// 3. Castling Secondary Rook Shifting Logic
-	if movingPiece.Type == King && int(math.Abs(float64(toLoc.File-fromLoc.File))) == 2 {
+	if movingPiece.Type == King && abs(toLoc.File-fromLoc.File) == 2 {
 		if toLoc.File == 7 { // Kingside
 			delete(m.Board, Location{File: 8, Rank: toLoc.Rank})
 			m.Board[Location{File: 6, Rank: toLoc.Rank}] = Piece{Type: Rook, Color: m.ActiveColor}
@@ -241,7 +248,8 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 	// 4. Pawn Promotion Logic
 	if movingPiece.Type == Pawn && (toLoc.Rank == 8 || toLoc.Rank == 1) {
 		if len(moveStr) == 5 {
-			switch moveStr[4] {
+			promoChar := moveStr[4]
+			switch promoChar {
 			case 'n':
 				movingPiece.Type = Knight
 			case 'b':
@@ -256,14 +264,14 @@ func (m *MatchState) ApplyMove(moveStr string) error {
 		}
 	}
 
-	// Update system clocks and En Passant flags
+	// Update system clocks and En Passant flags on the unified state
 	m.updateFlagsAndClocks(movingPiece, fromLoc, toLoc)
 
 	// 5. Complete the Move State Mutation
 	delete(m.Board, fromLoc)
 	m.Board[toLoc] = movingPiece
 
-	// Shift active color turns and advance move numbers
+	// Shift active color turns and advance move counters
 	if m.ActiveColor == White {
 		m.ActiveColor = Black
 	} else {
@@ -284,7 +292,7 @@ func (m *MatchState) updateFlagsAndClocks(piece Piece, from, to Location) {
 	}
 
 	// Set En Passant target string for the next turn loop
-	if piece.Type == Pawn && int(math.Abs(float64(to.Rank-from.Rank))) == 2 {
+	if piece.Type == Pawn && abs(to.Rank-from.Rank) == 2 {
 		middleRank := (from.Rank + to.Rank) / 2
 		fileChar := rune('a' + from.File - 1)
 		m.EnPassantTarget = fmt.Sprintf("%c%d", fileChar, middleRank)
@@ -313,6 +321,13 @@ func (m *MatchState) updateFlagsAndClocks(piece Piece, from, to Location) {
 			m.CastlingRights = removeRights(m.CastlingRights, "q")
 		}
 	}
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func removeRights(current, toRemove string) string {

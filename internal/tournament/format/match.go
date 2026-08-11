@@ -120,7 +120,7 @@ func (m *MatchTournament) GeneratePairings() ([]tournament.Pairing, error) {
 	return m.CurrentPairings, nil
 }
 
-func (m *MatchTournament) ResolveMatchOutcome(outcome tournament.MatchOutcome) {
+func (m *MatchTournament) ResolveGameOutcome(outcome tournament.MatchOutcome) {
 	if len(m.CurrentPairings) == 0 || m.CurrentPairings[0].ID != outcome.PairingID {
 		return
 	}

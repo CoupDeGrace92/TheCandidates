@@ -22,6 +22,12 @@ func SelectAndDeployStaticLayout(profile *game.PlayerProfile, catalog []BotLayou
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	currentGold := profile.BotTotalGold
 
+	for _, opt := range profile.BotStaticCatalog {
+		if casted, ok := opt.(BotLayoutOptions); ok {
+			catalog = append(catalog, casted)
+		}
+	}
+
 	var eligibleChoices []BotLayoutOptions
 	minGoldFloor := currentGold - 5
 	if minGoldFloor < 0 {
@@ -50,7 +56,11 @@ func SelectAndDeployStaticLayout(profile *game.PlayerProfile, catalog []BotLayou
 	board := make(game.BoardState)
 	for loc, piece := range extractedBoard {
 		piece.Color = botColor
-		board[loc] = piece
+		targetLoc := loc
+		if botColor == game.Black {
+			targetLoc = targetLoc.Transform()
+		}
+		board[targetLoc] = piece
 	}
 
 	bb := profile.BoardAndBench

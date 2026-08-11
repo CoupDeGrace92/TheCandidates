@@ -3,6 +3,8 @@ package scene
 import (
 	"log"
 
+	"github.com/CoupDeGrace92/candidates/internal/ai"
+	"github.com/CoupDeGrace92/candidates/internal/ai/static"
 	"github.com/CoupDeGrace92/candidates/internal/draft"
 	"github.com/CoupDeGrace92/candidates/internal/game"
 	"github.com/CoupDeGrace92/candidates/internal/tournament"
@@ -71,7 +73,7 @@ func (d *Director) EnterDraftPhase() {
 		}
 	}
 	localProfile.SwitchColorIfDifferent(localAssignedColor)
-	d.currentScene = NewShopScene(localProfile, d.draftManager)
+	d.currentScene = NewShopScene(localProfile, d.draftManager, d)
 }
 
 func (d *Director) getCurrentTourneyPairings() []tournament.Pairing {
@@ -80,35 +82,45 @@ func (d *Director) getCurrentTourneyPairings() []tournament.Pairing {
 }
 
 func (d *Director) CompleteDraftAndEnterBattle() {
-	log.Printf("[Round %d] Client checked in as READY. Simulating autonomous drafting brackets...", d.tourney.CurrentRound())
+	pairings, err := d.tourney.GeneratePairings()
+	if err != nil || len(pairings) == 0 {
+		log.Fatalf("Director Transition Error: Pairing retrieval failed: %v", err)
+	}
+	activePair := pairings[0]
 
-	var whiteCompetitor, blackCompetitor *game.PlayerProfile
-	activePairings := d.getCurrentTourneyPairings()
-
-	for _, pair := range activePairings {
-		if pair.WhitePlayer.PlayerID == d.localClientID || pair.BlackPlayer.PlayerID == d.localClientID {
-			whiteCompetitor = pair.WhitePlayer
-			blackCompetitor = pair.BlackPlayer
-			break
-		}
+	if !activePair.WhitePlayer.IsHuman {
+		ai.SelectAndDeployStaticLayout(activePair.WhitePlayer, static.GeneralCatalog, game.White)
+	}
+	if !activePair.BlackPlayer.IsHuman {
+		ai.SelectAndDeployStaticLayout(activePair.BlackPlayer, static.GeneralCatalog, game.Black)
 	}
 
-	globalBoard, _, err := game.MergePlayerPlacements(whiteCompetitor, blackCompetitor)
+	globalBoard, _, err := game.MergePlayerPlacements(activePair.WhitePlayer, activePair.BlackPlayer)
 	if err != nil {
-		log.Printf("Merge Phase Interception Error: %v", err)
+		log.Printf("Merge Phase Interception Warning: %v", err)
 	}
 
-	log.Printf("Draft configuration unified!  Transitioning local client to game phase.")
+	log.Printf("Draft configurations unified! Initializing MatchState parameters...")
 
 	matchState := &game.MatchState{
-		Board:       globalBoard,
-		WhitePlayer: whiteCompetitor,
-		BlackPlayer: blackCompetitor,
-		ActiveColor: "white",
+		Board:           globalBoard,
+		WhitePlayer:     activePair.WhitePlayer,
+		BlackPlayer:     activePair.BlackPlayer,
+		ActiveColor:     game.White,
+		HalfMoveClock:   0,
+		FullMoveNumber:  1,
+		CastlingRights:  "-",
+		EnPassantTarget: "-",
 	}
 
-	bScene, err := NewBattleScene("assets/engines/stockfish", matchState)
-	d.currentScene = bScene
+	binPath := "assets/engines/stockfish"
+	battleScene, err := NewBattleScene(binPath, matchState, d)
+	if err != nil {
+		log.Printf("Fatal Director Transition Error: Failed to spawn Stockfish BattleScene: %v", err)
+		return
+	}
+
+	d.currentScene = battleScene
 }
 
 func (d *Director) ConcludeBattleAndReturnToShop(outcome tournament.MatchOutcome) {

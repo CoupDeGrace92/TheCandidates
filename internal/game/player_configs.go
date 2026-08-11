@@ -14,6 +14,8 @@ type PlayerProfile struct {
 	BotTotalGold int        `json:"bot_total_gold"`
 	Color        PieceColor `json:"color"`
 
+	BotStaticCatalog []interface{} `json:"static_catalog"` //Note: []interface{} to get around circular package dependencies
+
 	SkillLevel      int `json:"skill_level"`
 	MoveTimeMs      int `json:"move_time_ms"`
 	MaxDrawishTurns int `json:"max_drawish_turns"`
@@ -68,25 +70,24 @@ func (profile *PlayerProfile) SwitchColorIfDifferent(newColor PieceColor) {
 		return
 	}
 
+	profile.Color = newColor
 	bb := profile.BoardAndBench
-
-	newSquares := make(map[Location]struct{})
-	for loc := range bb.Squares {
-		nLoc := loc.Transform()
-		newSquares[nLoc] = struct{}{}
-	}
-	bb.Squares = newSquares
-
-	newBoard := make(BoardState)
-	for loc, piece := range *bb.Board {
-		piece.Color = newColor
-		newBoard[loc.Transform()] = piece
-	}
-	*bb.Board = newBoard
 
 	for i := range bb.Bench {
 		bb.Bench[i].Color = newColor
 	}
 
-	profile.Color = newColor
+	tPieces := make(map[Location]Piece)
+	for loc, piece := range *bb.Board {
+		piece.Color = newColor
+		newLoc := loc.Transform()
+		tPieces[newLoc] = piece
+	}
+	(*bb.Board) = tPieces
+
+	tSquares := make(map[Location]struct{})
+	for loc := range bb.Squares {
+		tSquares[loc.Transform()] = struct{}{}
+	}
+	bb.Squares = tSquares
 }

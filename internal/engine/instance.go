@@ -33,7 +33,7 @@ func NewInstance(binaryPath string, cfg Config) (*StockfishInstance, error) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start stockfish executable")
+		return nil, fmt.Errorf("failed to start stockfish executable: %v", err)
 	}
 
 	instance := &StockfishInstance{
